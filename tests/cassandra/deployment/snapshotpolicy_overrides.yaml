@@ -1,0 +1,4 @@
+image:
+  repository: wozniakjan/snapshotpolicy
+  tag: latest
+  pullPolicy: Always

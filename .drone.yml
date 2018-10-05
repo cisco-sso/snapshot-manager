@@ -1,0 +1,7 @@
+pipeline:
+  publish_cisco:
+    image: plugins/docker
+    secrets: [docker_username, docker_password]
+    repo: containers.cisco.com/jawoznia/snapshot-validator
+    registry: containers.cisco.com
+    auto_tag: true

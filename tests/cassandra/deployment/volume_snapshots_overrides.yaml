@@ -1,0 +1,4 @@
+cloud:
+  provider: aws
+  secret:
+    create: false

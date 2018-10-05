@@ -1,0 +1,20 @@
+kind: List
+apiVersion: v1
+items:
+- kind: Namespace
+  apiVersion: v1
+  metadata:
+    name: snapshots
+- kind: ClusterRoleBinding
+  apiVersion: rbac.authorization.k8s.io/v1
+  metadata:
+    name: default-crb 
+    namespace: snapshots
+  subjects:
+  - kind: ServiceAccount
+    name: default
+    namespace: snapshots
+  roleRef:
+    kind: ClusterRole
+    name: cluster-admin
+    apiGroup: rbac.authorization.k8s.io
