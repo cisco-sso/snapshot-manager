@@ -12,6 +12,6 @@ spec:
   - data-cassandra-4
   unit: hour
   period: 5
-  retention: 3
+  retention: 1
   strategy:
     name: inuse

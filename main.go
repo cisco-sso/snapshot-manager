@@ -23,7 +23,7 @@ func main() {
 	kubeClient, snapshotClient, svClient := clients()
 	controller := NewController(kubeClient, snapshotClient, svClient, stopCh)
 
-	if err := controller.Run(2, stopCh); err != nil {
+	if err := controller.Run(1, stopCh); err != nil {
 		glog.Fatalf("Error running controller: %v", err)
 	}
 }

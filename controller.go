@@ -5,17 +5,21 @@ import (
 	vs "github.com/cisco-sso/snapshot-validator/pkg/apis/snapshotvalidator/v1alpha1"
 	svclientset "github.com/cisco-sso/snapshot-validator/pkg/client/clientset/versioned"
 	svinformers "github.com/cisco-sso/snapshot-validator/pkg/client/informers/externalversions"
-	vsv1alpha1 "github.com/cisco-sso/snapshot-validator/pkg/client/listers/snapshotvalidator/v1alpha1"
+	vslister "github.com/cisco-sso/snapshot-validator/pkg/client/listers/snapshotvalidator/v1alpha1"
 	"github.com/cisco-sso/snapshot-validator/pkg/validator"
 	"github.com/golang/glog"
 	snap "github.com/kubernetes-incubator/external-storage/snapshot/pkg/apis/crd/v1"
-	apiv1 "k8s.io/api/core/v1"
+	apps "k8s.io/api/apps/v1"
+	batch "k8s.io/api/batch/v1"
+	core "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	kubeinformers "k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
+	batchlisters "k8s.io/client-go/listers/batch/v1"
+	corelisters "k8s.io/client-go/listers/core/v1"
 	restclient "k8s.io/client-go/rest"
 	kcache "k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
@@ -24,15 +28,23 @@ import (
 
 type controller struct {
 	kubeClient kubernetes.Interface
+	svClient   svclientset.Interface
 
 	snapshotStore      kcache.Store
 	snapshotController kcache.Controller
 
-	svClient   svclientset.Interface
-	vsInformer kcache.SharedIndexInformer
-	vsLister   vsv1alpha1.ValidationStrategyLister
-	vrInformer kcache.SharedIndexInformer
-	vrLister   vsv1alpha1.ValidationRunLister
+	serviceInformer kcache.SharedIndexInformer
+	serviceLister   corelisters.ServiceLister
+	podInformer     kcache.SharedIndexInformer
+	podLister       corelisters.PodLister
+	pvcInformer     kcache.SharedIndexInformer
+	pvcLister       corelisters.PersistentVolumeClaimLister
+	jobInformer     kcache.SharedIndexInformer
+	jobLister       batchlisters.JobLister
+	vsInformer      kcache.SharedIndexInformer
+	vsLister        vslister.ValidationStrategyLister
+	vrInformer      kcache.SharedIndexInformer
+	vrLister        vslister.ValidationRunLister
 
 	snapshotWorkqueue      workqueue.RateLimitingInterface
 	validationRunWorkqueue workqueue.RateLimitingInterface
@@ -50,12 +62,20 @@ func NewController(
 	svfac := svinformers.NewSharedInformerFactory(svClient, syncTime)
 	c := &controller{
 		kubeClient: kubeClient,
-
 		svClient:   svClient,
-		vsInformer: svfac.Snapshotvalidator().V1alpha1().ValidationStrategies().Informer(),
-		vsLister:   svfac.Snapshotvalidator().V1alpha1().ValidationStrategies().Lister(),
-		vrInformer: svfac.Snapshotvalidator().V1alpha1().ValidationRuns().Informer(),
-		vrLister:   svfac.Snapshotvalidator().V1alpha1().ValidationRuns().Lister(),
+
+		serviceInformer: kfac.Core().V1().Services().Informer(),
+		serviceLister:   kfac.Core().V1().Services().Lister(),
+		podInformer:     kfac.Core().V1().Pods().Informer(),
+		podLister:       kfac.Core().V1().Pods().Lister(),
+		pvcInformer:     kfac.Core().V1().PersistentVolumeClaims().Informer(),
+		pvcLister:       kfac.Core().V1().PersistentVolumeClaims().Lister(),
+		jobInformer:     kfac.Batch().V1().Jobs().Informer(),
+		jobLister:       kfac.Batch().V1().Jobs().Lister(),
+		vsInformer:      svfac.Snapshotvalidator().V1alpha1().ValidationStrategies().Informer(),
+		vsLister:        svfac.Snapshotvalidator().V1alpha1().ValidationStrategies().Lister(),
+		vrInformer:      svfac.Snapshotvalidator().V1alpha1().ValidationRuns().Informer(),
+		vrLister:        svfac.Snapshotvalidator().V1alpha1().ValidationRuns().Lister(),
 
 		snapshotWorkqueue:      workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "VolumeSnapshots"),
 		validationRunWorkqueue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "ValidatorRun"),
@@ -66,7 +86,7 @@ func NewController(
 	snapshotWatch := kcache.NewListWatchFromClient(
 		snapshotClient,
 		snap.VolumeSnapshotResourcePlural,
-		apiv1.NamespaceAll,
+		core.NamespaceAll,
 		fields.Everything())
 
 	c.snapshotStore, c.snapshotController = kcache.NewInformer(
@@ -83,18 +103,79 @@ func NewController(
 		UpdateFunc: func(old, new interface{}) { c.enqueueValidatorRun(new) },
 	})
 
-	go c.validator.Start(stopCh)
 	go kfac.Start(stopCh)
 	go svfac.Start(stopCh)
 	return c
 }
 
+func (c *controller) UpdateValidationRun(run *vs.ValidationRun) error {
+	//TODO: make diff and then call patch
+	var result vs.ValidationRun
+	return c.svClient.SnapshotvalidatorV1alpha1().RESTClient().Put().
+		Name(run.Name).
+		Resource(vs.ValidationRunResourcePlural).
+		Namespace(run.Namespace).
+		Body(run).
+		Do().Into(&result)
+}
+
+func (c *controller) CreateValidationRun(run *vs.ValidationRun) error {
+	var result vs.ValidationRun
+	return c.svClient.SnapshotvalidatorV1alpha1().RESTClient().Post().
+		Resource(vs.ValidationRunResourcePlural).
+		Namespace(run.Namespace).
+		Body(run).
+		Do().Into(&result)
+}
+func (c *controller) CreatePVC(pvc *core.PersistentVolumeClaim) error {
+	var result core.PersistentVolumeClaim
+	return c.kubeClient.CoreV1().RESTClient().Post().
+		Resource("persistentvolumeclaims").
+		Namespace(pvc.Namespace).
+		Body(pvc).
+		Do().Into(&result)
+}
+func (c *controller) CreateStatefulSet(sts *apps.StatefulSet) error {
+	var result apps.StatefulSet
+	return c.kubeClient.AppsV1().RESTClient().Post().
+		Resource("statefulsets").
+		Namespace(sts.Namespace).
+		Body(sts).
+		Do().Into(&result)
+}
+func (c *controller) CreateJob(job *batch.Job) error {
+	var result batch.Job
+	return c.kubeClient.BatchV1().RESTClient().Post().
+		Resource("jobs").
+		Namespace(job.Namespace).
+		Body(job).
+		Do().Into(&result)
+}
+func (c *controller) CreateService(svc *core.Service) error {
+	var result core.Service
+	return c.kubeClient.CoreV1().RESTClient().Post().
+		Resource("services").
+		Namespace(svc.Namespace).
+		Body(svc).
+		Do().Into(&result)
+}
+func (c *controller) ListPods(selector labels.Selector) ([]*core.Pod, error) {
+	return c.podLister.List(selector)
+}
 func (c *controller) ListStrategies() ([]*vs.ValidationStrategy, error) {
 	return c.vsLister.List(labels.Everything())
-
 }
 func (c *controller) ListRuns() ([]*vs.ValidationRun, error) {
 	return c.vrLister.List(labels.Everything())
+}
+func (c *controller) GetPVC(namespace, name string) (*core.PersistentVolumeClaim, error) {
+	return c.pvcLister.PersistentVolumeClaims(namespace).Get(name)
+}
+func (c *controller) GetJob(namespace, name string) (*batch.Job, error) {
+	return c.jobLister.Jobs(namespace).Get(name)
+}
+func (c *controller) GetService(namespace, name string) (*core.Service, error) {
+	return c.serviceLister.Services(namespace).Get(name)
 }
 
 func (c *controller) enqueueValidatorRun(obj interface{}) {
@@ -109,7 +190,7 @@ func (c *controller) enqueueValidatorRun(obj interface{}) {
 		runtime.HandleError(err)
 		return
 	} else {
-		c.snapshotWorkqueue.AddRateLimited(key)
+		c.validationRunWorkqueue.AddRateLimited(key)
 	}
 }
 
@@ -132,10 +213,20 @@ func (c *controller) enqueueSnapshot(obj interface{}) {
 func (c *controller) Run(threadiness int, stopCh <-chan struct{}) error {
 	defer runtime.HandleCrash()
 	defer c.snapshotWorkqueue.ShutDown()
+	defer c.validationRunWorkqueue.ShutDown()
 	glog.Info("Starting snapshot-validator controller")
 	glog.Info("Waiting for informer caches to sync")
 	go c.snapshotController.Run(stopCh)
-	if ok := kcache.WaitForCacheSync(stopCh, c.snapshotController.HasSynced); !ok {
+	ok := kcache.WaitForCacheSync(stopCh,
+		c.serviceInformer.HasSynced,
+		c.snapshotController.HasSynced,
+		c.podInformer.HasSynced,
+		c.pvcInformer.HasSynced,
+		c.jobInformer.HasSynced,
+		c.vsInformer.HasSynced,
+		c.vrInformer.HasSynced,
+	)
+	if !ok {
 		return fmt.Errorf("failed to wait for caches to sync")
 	}
 	glog.Info("Starting workers")

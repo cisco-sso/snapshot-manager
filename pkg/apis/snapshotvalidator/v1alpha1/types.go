@@ -1,6 +1,9 @@
 package v1alpha1
 
 import (
+	appsv1 "k8s.io/api/apps/v1"
+	batchv1 "k8s.io/api/batch/v1"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -25,13 +28,15 @@ type ValidationStrategy struct {
 
 // ValidationStrategySpec
 type ValidationStrategySpec struct {
-	MatchLabels   map[string]string `json:"matchLabels"`
-	Resources     []string          `json:"resources"` //TODO: check how this is done in "list" object
-	InitHook      string            `json:"initHook"`  //TODO: check how this is done in "job" object
-	PreValidation string            `json:"preValidation"`
-	Validation    string            `json:"validation"`
-	KeepFinished  int               `json:"keepFinished"`
-	KeepActive    int               `json:"keepActive"`
+	Selector metav1.LabelSelector `json:"selector"`
+	//TODO: remove from here and keep in run only
+	Claims        map[string]corev1.PersistentVolumeClaim `json:"claims"`
+	StatefulSet   *appsv1.StatefulSet                     `json:"statefulSet,omitempty"`
+	Service       *corev1.Service                         `json:"service,omitempty"`
+	Init          *batchv1.Job                            `json:"init,omitempty"`
+	PreValidation *batchv1.Job                            `json:"preValidation,omitempty"`
+	Validation    *batchv1.Job                            `json:"validation,omitempty"`
+	KeepFinished  int                                     `json:"keepFinished"`
 }
 
 // ValidationStrategyStatus
@@ -63,17 +68,18 @@ type ValidationRun struct {
 
 // ValidationRunSpec
 type ValidationRunSpec struct {
-	Snapshots map[string]bool `json:"snapshots"`
+	Snapshots map[string]string                       `json:"snapshots"`
+	Claims    map[string]corev1.PersistentVolumeClaim `json:"claims"`
 }
 
 // ValidationRunStatus
 type ValidationRunStatus struct {
-	InitStarted           metav1.Time `json:"initStarted"`
-	InitFinished          metav1.Time `json:"initFinished"`
-	PreValidationStarted  metav1.Time `json:"PreValidationStarted"`
-	PreValidationFinished metav1.Time `json:"PreValidationFinished"`
-	ValidationStarted     metav1.Time `json:"validationStarted"`
-	ValidationFinished    metav1.Time `json:"validationFinished"`
+	InitStarted           *metav1.Time `json:"initStarted,omitempty"`
+	InitFinished          *metav1.Time `json:"initFinished,omitempty"`
+	PreValidationStarted  *metav1.Time `json:"PreValidationStarted,omitempty"`
+	PreValidationFinished *metav1.Time `json:"PreValidationFinished,omitempty"`
+	ValidationStarted     *metav1.Time `json:"validationStarted,omitempty"`
+	ValidationFinished    *metav1.Time `json:"validationFinished,omitempty"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
