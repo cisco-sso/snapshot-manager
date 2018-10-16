@@ -1,7 +1,7 @@
 apiVersion: snapshotpolicy.ciscosso.io/v1alpha1
 kind: SnapshotPolicy
 metadata:
-  name: cassandra-backups 
+  name: cassandra-backups
   namespace: snapshots
 spec:
   claims:
@@ -11,7 +11,7 @@ spec:
   - data-cassandra-3
   - data-cassandra-4
   unit: hour
-  period: 5
+  period: 24
   retention: 1
   strategy:
     name: inuse

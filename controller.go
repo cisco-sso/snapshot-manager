@@ -12,12 +12,15 @@ import (
 	apps "k8s.io/api/apps/v1"
 	batch "k8s.io/api/batch/v1"
 	core "k8s.io/api/core/v1"
+	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	kubeinformers "k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
+	appslisters "k8s.io/client-go/listers/apps/v1"
 	batchlisters "k8s.io/client-go/listers/batch/v1"
 	corelisters "k8s.io/client-go/listers/core/v1"
 	restclient "k8s.io/client-go/rest"
@@ -27,18 +30,23 @@ import (
 )
 
 type controller struct {
-	kubeClient kubernetes.Interface
-	svClient   svclientset.Interface
+	kubeClient     kubernetes.Interface
+	svClient       svclientset.Interface
+	snapshotClient *restclient.RESTClient
 
 	snapshotStore      kcache.Store
 	snapshotController kcache.Controller
 
+	stsInformer     kcache.SharedIndexInformer
+	stsLister       appslisters.StatefulSetLister
 	serviceInformer kcache.SharedIndexInformer
 	serviceLister   corelisters.ServiceLister
 	podInformer     kcache.SharedIndexInformer
 	podLister       corelisters.PodLister
 	pvcInformer     kcache.SharedIndexInformer
 	pvcLister       corelisters.PersistentVolumeClaimLister
+	pvInformer      kcache.SharedIndexInformer
+	pvLister        corelisters.PersistentVolumeLister
 	jobInformer     kcache.SharedIndexInformer
 	jobLister       batchlisters.JobLister
 	vsInformer      kcache.SharedIndexInformer
@@ -61,15 +69,20 @@ func NewController(
 	kfac := kubeinformers.NewSharedInformerFactory(kubeClient, syncTime)
 	svfac := svinformers.NewSharedInformerFactory(svClient, syncTime)
 	c := &controller{
-		kubeClient: kubeClient,
-		svClient:   svClient,
+		kubeClient:     kubeClient,
+		svClient:       svClient,
+		snapshotClient: snapshotClient,
 
+		stsInformer:     kfac.Apps().V1().StatefulSets().Informer(),
+		stsLister:       kfac.Apps().V1().StatefulSets().Lister(),
 		serviceInformer: kfac.Core().V1().Services().Informer(),
 		serviceLister:   kfac.Core().V1().Services().Lister(),
 		podInformer:     kfac.Core().V1().Pods().Informer(),
 		podLister:       kfac.Core().V1().Pods().Lister(),
 		pvcInformer:     kfac.Core().V1().PersistentVolumeClaims().Informer(),
 		pvcLister:       kfac.Core().V1().PersistentVolumeClaims().Lister(),
+		pvInformer:      kfac.Core().V1().PersistentVolumes().Informer(),
+		pvLister:        kfac.Core().V1().PersistentVolumes().Lister(),
 		jobInformer:     kfac.Batch().V1().Jobs().Informer(),
 		jobLister:       kfac.Batch().V1().Jobs().Lister(),
 		vsInformer:      svfac.Snapshotvalidator().V1alpha1().ValidationStrategies().Informer(),
@@ -79,6 +92,8 @@ func NewController(
 
 		snapshotWorkqueue:      workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "VolumeSnapshots"),
 		validationRunWorkqueue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "ValidatorRun"),
+		/*snapshotWorkqueue:      workqueue.NewNamedQueue("VolumeSnapshots"),
+		validationRunWorkqueue: workqueue.NewNamedQueue("ValidatorRun"),*/
 	}
 
 	c.validator = validator.NewValidator(c)
@@ -118,7 +133,6 @@ func (c *controller) UpdateValidationRun(run *vs.ValidationRun) error {
 		Body(run).
 		Do().Into(&result)
 }
-
 func (c *controller) CreateValidationRun(run *vs.ValidationRun) error {
 	var result vs.ValidationRun
 	return c.svClient.SnapshotvalidatorV1alpha1().RESTClient().Post().
@@ -127,6 +141,11 @@ func (c *controller) CreateValidationRun(run *vs.ValidationRun) error {
 		Body(run).
 		Do().Into(&result)
 }
+func (c *controller) DeleteValidationRun(run *vs.ValidationRun) error {
+	return c.svClient.SnapshotvalidatorV1alpha1().
+		ValidationRuns(run.Namespace).
+		Delete(run.Name, &meta.DeleteOptions{})
+}
 func (c *controller) CreatePVC(pvc *core.PersistentVolumeClaim) error {
 	var result core.PersistentVolumeClaim
 	return c.kubeClient.CoreV1().RESTClient().Post().
@@ -134,6 +153,11 @@ func (c *controller) CreatePVC(pvc *core.PersistentVolumeClaim) error {
 		Namespace(pvc.Namespace).
 		Body(pvc).
 		Do().Into(&result)
+}
+func (c *controller) DeletePVC(pvc *core.PersistentVolumeClaim) error {
+	return c.kubeClient.CoreV1().
+		PersistentVolumeClaims(pvc.Namespace).
+		Delete(pvc.Name, &meta.DeleteOptions{})
 }
 func (c *controller) CreateStatefulSet(sts *apps.StatefulSet) error {
 	var result apps.StatefulSet
@@ -159,6 +183,23 @@ func (c *controller) CreateService(svc *core.Service) error {
 		Body(svc).
 		Do().Into(&result)
 }
+func (c *controller) LabelSnapshot(namespace, name, label, key string) error {
+	//TODO: patch
+	//patch := fmt.Sprintf(`[{"op":"replace","path":"/metadata/labels/%v","value":%v}]`, label, key)
+	var result snap.VolumeSnapshot
+	s, err := c.GetSnapshot(namespace, name)
+	if err != nil {
+		return fmt.Errorf("Failed getting snapshot %v/%v for relabel: %v", namespace, name)
+	}
+	copy := s.DeepCopy()
+	copy.Metadata.Labels[label] = key
+	return c.snapshotClient.Put().
+		Resource(snap.VolumeSnapshotResourcePlural).
+		Namespace(namespace).
+		Name(name).
+		Body(copy).
+		Do().Into(&result)
+}
 func (c *controller) ListPods(selector labels.Selector) ([]*core.Pod, error) {
 	return c.podLister.List(selector)
 }
@@ -171,8 +212,38 @@ func (c *controller) ListRuns() ([]*vs.ValidationRun, error) {
 func (c *controller) GetPVC(namespace, name string) (*core.PersistentVolumeClaim, error) {
 	return c.pvcLister.PersistentVolumeClaims(namespace).Get(name)
 }
+func (c *controller) GetPV(name string) (*core.PersistentVolume, error) {
+	return c.pvLister.Get(name)
+}
 func (c *controller) GetJob(namespace, name string) (*batch.Job, error) {
+	if err := c.jobInformer.GetStore().Resync(); err != nil {
+		glog.Error("Failed to resync jobsInformer store")
+	}
 	return c.jobLister.Jobs(namespace).Get(name)
+}
+func (c *controller) GetSts(namespace, name string) (*apps.StatefulSet, error) {
+	return c.stsLister.StatefulSets(namespace).Get(name)
+}
+func (c *controller) GetSnapshot(namespace, name string) (*snap.VolumeSnapshot, error) {
+	key := namespace + "/" + name
+	obj, ok, err := c.snapshotStore.GetByKey(key)
+	if !ok {
+		return nil, fmt.Errorf("Snapshot %v not found", key)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("Finding Snapshot %v failed: %v", key, err)
+	}
+	snapshot, ok := obj.(*snap.VolumeSnapshot)
+	if !ok {
+		return nil, fmt.Errorf("Finding Snapshot %v failed typecast", key)
+	}
+	return snapshot, nil
+}
+func (c *controller) SetStsReplica(namespace, name string, replica int) error {
+	patch := fmt.Sprintf(`[{"op":"replace","path":"/spec/replicas","value":%d}]`, replica)
+	_, err := c.kubeClient.AppsV1().StatefulSets(namespace).
+		Patch(name, types.JSONPatchType, []byte(patch))
+	return err
 }
 func (c *controller) GetService(namespace, name string) (*core.Service, error) {
 	return c.serviceLister.Services(namespace).Get(name)
@@ -184,12 +255,14 @@ func (c *controller) enqueueValidatorRun(obj interface{}) {
 		glog.Warningf("expecting type ValidationRun but received type %T", obj)
 		return
 	}
-	glog.V(4).Infof("enqueue %s, ValidationRun %#v", vr.SelfLink, vr)
+	glog.Infof("enqueue ValidationRun %v/%v", vr.Namespace, vr.Name)
 
 	if key, err := kcache.MetaNamespaceKeyFunc(obj); err != nil {
 		runtime.HandleError(err)
 		return
 	} else {
+		//TODO: learn how to properly sync cache
+		time.Sleep(100 * time.Millisecond)
 		c.validationRunWorkqueue.AddRateLimited(key)
 	}
 }
@@ -200,12 +273,14 @@ func (c *controller) enqueueSnapshot(obj interface{}) {
 		glog.Warningf("expecting type VolumeSnapshot but received type %T", obj)
 		return
 	}
-	glog.V(4).Infof("enqueue %s, Snapshot %#v", snapshot.Metadata.SelfLink, snapshot)
+	glog.Infof("enqueue snapshot %v/%v", snapshot.Metadata.Namespace, snapshot.Metadata.Name)
 
 	if key, err := kcache.MetaNamespaceKeyFunc(obj); err != nil {
 		runtime.HandleError(err)
 		return
 	} else {
+		//TODO: learn how to properly sync cache
+		time.Sleep(100 * time.Millisecond)
 		c.snapshotWorkqueue.AddRateLimited(key)
 	}
 }
@@ -275,8 +350,7 @@ func (c *controller) processNextValidation() (bool, error) {
 	if err := c.validator.ProcessValidationRun(validationRun); err != nil {
 		return false, fmt.Errorf("processing validationRun %v failed: %v", key, err)
 	}
-
-	c.snapshotWorkqueue.Forget(obj)
+	c.validationRunWorkqueue.Forget(obj)
 	glog.Infof("Successfully synced '%s'", key)
 	return false, nil
 }

@@ -26,6 +26,19 @@ func newBasicClient() *basicClient {
 	}
 }
 
+func CreateService(*core.Service) error {
+	return nil
+}
+func GetSts(string, string) (*apps.StatefulSet, error) {
+	return nil, nil
+}
+func GetService(string, string) (*core.Service, error) {
+	return nil, nil
+}
+
+func SetStsReplica(string, string, int) error {
+	return
+}
 func (c *basicClient) ListStrategies() ([]*vs.ValidationStrategy, error) {
 	pvc1 := core.PersistentVolumeClaim{}
 	pvc1.Name = "snapshot-pvc1"

@@ -145,6 +145,14 @@ func (in *ValidationRunStatus) DeepCopyInto(out *ValidationRunStatus) {
 		in, out := &in.ValidationFinished, &out.ValidationFinished
 		*out = (*in).DeepCopy()
 	}
+	if in.CleanupStarted != nil {
+		in, out := &in.CleanupStarted, &out.CleanupStarted
+		*out = (*in).DeepCopy()
+	}
+	if in.CleanupFinished != nil {
+		in, out := &in.CleanupFinished, &out.CleanupFinished
+		*out = (*in).DeepCopy()
+	}
 	return
 }
 

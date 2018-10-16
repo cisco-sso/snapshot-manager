@@ -93,15 +93,19 @@ spec:
     spec:
       template:
         spec:
+          restartPolicy: Never
           containers:
           - name: cassandra 
             image: cassandra:3
+            # idempotent step initializing both original and snapshot service
+            # creates counter tables if do not already exist
             command: [ "bash", "-c", "set -x; set -e; 
-              cqlsh cassandra -e \"CREATE KEYSPACE IF NOT EXISTS snapshot_helper WITH REPLICATION = {'class':'SimpleStrategy', 'replication_factor':1}\" && 
-              cqlsh cassandra -e \"CREATE TABLE IF NOT EXISTS snapshot_helper.index_table ( id UUID PRIMARY KEY, count counter );\" &&
-              cqlsh snapshot-cassandra -e \"CREATE KEYSPACE IF NOT EXISTS snapshot_helper WITH REPLICATION = {'class':'SimpleStrategy', 'replication_factor':1}\" && 
-              cqlsh snapshot-cassandra -e \"CREATE TABLE IF NOT EXISTS snapshot_helper.index_table ( id UUID PRIMARY KEY, count counter );\"" ]
-  validation:
+              cqlsh cassandra -e \"CREATE KEYSPACE IF NOT EXISTS snapshot_helper WITH REPLICATION = {'class':'SimpleStrategy', 'replication_factor':1}\" ;
+              cqlsh cassandra -e \"CREATE TABLE IF NOT EXISTS snapshot_helper.index_table ( id UUID PRIMARY KEY, count counter );\" ;
+              cqlsh snapshot-cassandra -e \"CREATE KEYSPACE IF NOT EXISTS snapshot_helper WITH REPLICATION = {'class':'SimpleStrategy', 'replication_factor':1}\" ;
+              cqlsh snapshot-cassandra -e \"CREATE TABLE IF NOT EXISTS snapshot_helper.index_table ( id UUID PRIMARY KEY, count counter );\" ;
+              echo initialized"]
+  preValidation:
     apiVersion: batch/v1
     kind: Job
     metadata:
@@ -110,17 +114,41 @@ spec:
     spec:
       template:
         spec:
+          restartPolicy: Never
+          backoffLimit: 0
           containers:
           - name: cassandra 
             image: cassandra:3
-            #increment counter V in cassandra
-            #query cassandra for value V, query snapshot-cassandra for S
-            #S == V-1)
+            # this should be atomic, only one command that if failed can be safely retried
+            # add 1 to the counter in original db
             command: [ "bash", "-c", "set -x; set -e;
-              cqlsh cassandra -e 'UPDATE snapshot_helper.index_table SET count = count + 1 WHERE id = 6ab09bec-e68e-48d9-a5f8-97e6fb4c9b47'
-              V=$(cqlsh cassandra -e 'SELECT count FROM snapshot_helper.index_table WHERE id = 6ab09bec-e68e-48d9-a5f8-97e6fb4c9b47;' | awk 'NR==4{print($1)}') &&
-              S=$(cqlsh snapshot-cassandra -e 'SELECT count FROM snapshot_helper.index_table WHERE id = 6ab09bec-e68e-48d9-a5f8-97e6fb4c9b47;' | awk 'NR==4{print($1)}') &&
-              V=$((V-1)) && if [[ V != S ]]; then exit 1; fi"]
+              cqlsh cassandra -e 'UPDATE snapshot_helper.index_table SET count = count + 1 WHERE id = 6ab09bec-e68e-48d9-a5f8-97e6fb4c9b47' ;
+              echo updated"]
+  validation:
+    apiVersion: batch/v1
+    kind: Job
+    metadata:
+      name: snapshot-cassandra-validation
+      namespace: snapshots
+    spec:
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+          - name: cassandra 
+            image: cassandra:3
+            # actual validation, query original db, where the counter should have been increased for snapshot_helper.index_table in previous step
+            # compare to snapshot db, there the counter should be 1 less
+            # prior triggering snapshotpolicy, we create 
+            command: [ "bash", "-c", "set -x; set -e; 
+              ORIGINAL=$(cqlsh cassandra -e 'SELECT count FROM snapshot_helper.index_table WHERE id = 6ab09bec-e68e-48d9-a5f8-97e6fb4c9b47;' | awk 'NR==4{print($1)}') ;
+              SNAPSHOT=$(cqlsh snapshot-cassandra -e 'SELECT count FROM snapshot_helper.index_table WHERE id = 6ab09bec-e68e-48d9-a5f8-97e6fb4c9b47;' | awk 'NR==4{print($1)}') ;
+              if [[ $SNAPSHOT == '' ]]; then SNAPSHOT=0; fi ;
+              ORIGINAL=$((ORIGINAL-1)) ;
+              if [[ $ORIGINAL != $SNAPSHOT ]]; then echo failed; exit 1; else echo success; fi ;
+              TEST_O=$(cqlsh cassandra -e 'SELECT count FROM test.test_table WHERE id = aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa' | awk 'NR==4{print($1)}') ;
+              TEST_S=$(cqlsh snapshot-cassandra -e 'SELECT count FROM test.test_table WHERE id = aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa' | awk 'NR==4{print($1)}') ;
+              if [[ $TEST_O != $TEST_S ]]; then echo failed test; exit 1; else echo success test; fi ; "]
   service:
     apiVersion: v1
     kind: Service
@@ -133,23 +161,23 @@ spec:
       clusterIP: None
       ports:
       - name: intra
-        port: 7000
+        port: 7500
         protocol: TCP
         targetPort: 7000
       - name: tls
-        port: 7001
+        port: 7501
         protocol: TCP
         targetPort: 7001
       - name: jmx
-        port: 7199
+        port: 7699
         protocol: TCP
         targetPort: 7199
       - name: cql
-        port: 9042
+        port: 9542
         protocol: TCP
         targetPort: 9042
       - name: thrift
-        port: 9160
+        port: 9660
         protocol: TCP
         targetPort: 9160
       selector:
@@ -158,6 +186,8 @@ spec:
       type: ClusterIP
     status:
       loadBalancer: {}
+  #pauseSts:
+    #cassandra
   statefulSet:
     apiVersion: apps/v1
     kind: StatefulSet
@@ -182,6 +212,8 @@ spec:
         spec:
           containers:
           - env:
+            - name: JVM_EXTRA_OPTS
+              value: -Dcassandra.jmx.local.port=7199 -Dcom.sun.management.jmxremote -Dcom.sun.management.jmxremote.authenticate=false -Dcom.sun.management.jmxremote.local.only=false -Dcom.sun.management.jmxremote.port=7199 -Dcom.sun.management.jmxremote.rmi.port=7199 -Dcom.sun.management.jmxremote.ssl=false -Djava.rmi.server.hostname=127.0.0.1 
             - name: CASSANDRA_SEEDS
               value: snapshot-cassandra-0.snapshot-cassandra.snapshots.svc.cluster.local,snapshot-cassandra-1.snapshot-cassandra.snapshots.svc.cluster.local
             - name: MAX_HEAP_SIZE
@@ -191,7 +223,7 @@ spec:
             - name: CASSANDRA_ENDPOINT_SNITCH
               value: SimpleSnitch
             - name: CASSANDRA_CLUSTER_NAME
-              value: cassandra
+              value: snapshot-cassandra
             - name: CASSANDRA_DC
               value: DC1
             - name: CASSANDRA_RACK
@@ -206,8 +238,8 @@ spec:
                   apiVersion: v1
                   fieldPath: status.podIP
             name: cassandra
-            image: cassandra:3
-            imagePullPolicy: IfNotPresent
+            image: containers.cisco.com/jawoznia/snapshot-cassandra:latest
+            imagePullPolicy: Always 
             volumeMounts:
             - mountPath: /var/lib/cassandra
               name: data

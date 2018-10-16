@@ -17,18 +17,32 @@ import (
 	"time"
 )
 
+var (
+	// treat as constants
+	block = true
+	zero  = 0
+)
+
 type KubeClient interface {
 	ListStrategies() ([]*vs.ValidationStrategy, error)
 	ListRuns() ([]*vs.ValidationRun, error)
 	ListPods(labels.Selector) ([]*core.Pod, error)
 	CreateValidationRun(*vs.ValidationRun) error
 	UpdateValidationRun(*vs.ValidationRun) error
+	DeleteValidationRun(*vs.ValidationRun) error
 	CreatePVC(*core.PersistentVolumeClaim) error
+	DeletePVC(*core.PersistentVolumeClaim) error
 	CreateService(*core.Service) error
 	CreateStatefulSet(*apps.StatefulSet) error
 	CreateJob(*batch.Job) error
 	GetPVC(string, string) (*core.PersistentVolumeClaim, error)
+	GetPV(string) (*core.PersistentVolume, error)
 	GetJob(string, string) (*batch.Job, error)
+	GetSts(string, string) (*apps.StatefulSet, error)
+	GetService(string, string) (*core.Service, error)
+	GetSnapshot(string, string) (*snap.VolumeSnapshot, error)
+	LabelSnapshot(string, string, string, string) error
+	SetStsReplica(string, string, int) error
 }
 
 type validator struct {
@@ -134,10 +148,11 @@ func initRun(strategy *vs.ValidationStrategy) *vs.ValidationRun {
 	run.Name = strategy.Name + "-" + string(uuid.NewUUID())
 	run.Namespace = strategy.Namespace
 	run.OwnerReferences = []meta.OwnerReference{{
-		UID:        strategy.UID,
-		APIVersion: "snapshotvalidator.ciscosso.io/v1alpha1",
-		Kind:       "ValidationStrategy",
-		Name:       "cassandra",
+		UID:                strategy.UID,
+		APIVersion:         "snapshotvalidator.ciscosso.io/v1alpha1",
+		Kind:               "ValidationStrategy",
+		Name:               "cassandra",
+		BlockOwnerDeletion: &block,
 	}}
 
 	glog.V(4).Infof("init run %v/%v from strategy - %#v", run.Namespace, run.Name, strategy)
@@ -192,17 +207,24 @@ func (v *validator) createSnapshotPVCs(strategy *vs.ValidationStrategy, run *vs.
 		}
 		pvc.Annotations["snapshot.alpha.kubernetes.io/snapshot"] = snapshotName
 		pvc.OwnerReferences = []meta.OwnerReference{{
-			UID:        run.UID,
-			APIVersion: "snapshotvalidator.ciscosso.io/v1alpha1",
-			Kind:       "ValidationRun",
-			Name:       run.Name,
+			UID:                run.UID,
+			APIVersion:         "snapshotvalidator.ciscosso.io/v1alpha1",
+			Kind:               "ValidationRun",
+			Name:               run.Name,
+			BlockOwnerDeletion: &block,
 		}}
 		err := v.kube.CreatePVC(&pvc)
 		if err != nil {
 			return e("creating PVC %v", err, pvc)
 		}
 	}
-	if err := wait.PollImmediate(10*time.Second, 10*time.Minute, func() (bool, error) { return v.pvcsBound(run), nil }); err != nil {
+	if err := wait.PollImmediate(10*time.Second, 10*time.Minute, func() (bool, error) {
+		allBound := v.pvcsBound(run)
+		if !allBound {
+			glog.Info("PVCs not bound for run %v/%v", run.Namespace, run.Name)
+		}
+		return allBound, nil
+	}); err != nil {
 		return e("run %v failed init, waiting for pvcs to bound", err, run)
 	}
 	return nil
@@ -215,10 +237,11 @@ func (v *validator) createJob(job *batch.Job, run *vs.ValidationRun) error {
 			return nil
 		}
 		job.OwnerReferences = []meta.OwnerReference{{
-			UID:        run.UID,
-			APIVersion: "snapshotvalidator.ciscosso.io/v1alpha1",
-			Kind:       "ValidationRun",
-			Name:       run.Name,
+			UID:                run.UID,
+			APIVersion:         "snapshotvalidator.ciscosso.io/v1alpha1",
+			Kind:               "ValidationRun",
+			Name:               run.Name,
+			BlockOwnerDeletion: &block,
 		}}
 		if err := v.kube.CreateJob(job); err != nil {
 			return e("creating job %v", err, job)
@@ -226,10 +249,10 @@ func (v *validator) createJob(job *batch.Job, run *vs.ValidationRun) error {
 		if err := wait.PollImmediate(10*time.Second, 10*time.Minute, func() (bool, error) {
 			current, err := v.kube.GetJob(job.Namespace, job.Name)
 			if err != nil {
-				glog.Errorf("failed getting job %v/%v", job.Namespace, job.Name)
+				glog.Errorf("polling - failed getting job %v/%v", job.Namespace, job.Name)
 				return false, nil
 			}
-			return current.Status.Succeeded != 0, nil
+			return current.Status.Succeeded > 0, nil
 		}); err != nil {
 			return e("run %v failed waiting for job %v to finish", err, run, job)
 		}
@@ -239,11 +262,16 @@ func (v *validator) createJob(job *batch.Job, run *vs.ValidationRun) error {
 
 func (v *validator) createService(service *core.Service, run *vs.ValidationRun) error {
 	if service != nil {
+		oldsvc, _ := v.kube.GetService(service.Namespace, service.Name)
+		if oldsvc != nil {
+			return nil
+		}
 		service.OwnerReferences = []meta.OwnerReference{{
-			UID:        run.UID,
-			APIVersion: "snapshotvalidator.ciscosso.io/v1alpha1",
-			Kind:       "ValidationRun",
-			Name:       run.Name,
+			UID:                run.UID,
+			APIVersion:         "snapshotvalidator.ciscosso.io/v1alpha1",
+			Kind:               "ValidationRun",
+			Name:               run.Name,
+			BlockOwnerDeletion: &block,
 		}}
 		if err := v.kube.CreateService(service); err != nil {
 			return e("creating service %v", err, service)
@@ -253,17 +281,22 @@ func (v *validator) createService(service *core.Service, run *vs.ValidationRun) 
 }
 func (v *validator) createSts(sts *apps.StatefulSet, run *vs.ValidationRun) error {
 	if sts != nil {
+		oldsts, _ := v.kube.GetSts(sts.Namespace, sts.Name)
+		if oldsts != nil {
+			return nil
+		}
 		sts.OwnerReferences = []meta.OwnerReference{{
-			UID:        run.UID,
-			APIVersion: "snapshotvalidator.ciscosso.io/v1alpha1",
-			Kind:       "ValidationRun",
-			Name:       run.Name,
+			UID:                run.UID,
+			APIVersion:         "snapshotvalidator.ciscosso.io/v1alpha1",
+			Kind:               "ValidationRun",
+			Name:               run.Name,
+			BlockOwnerDeletion: &block,
 		}}
 		if err := v.kube.CreateStatefulSet(sts); err != nil {
 			return e("creating sts %v", err, sts)
 		}
 		if err := wait.PollImmediate(10*time.Second, 10*time.Minute, func() (bool, error) { return v.podsReady(sts) }); err != nil {
-			return e("waiting for pods to get ready %v", err, sts)
+			return e("waiting for pods ready %v", err, sts)
 		}
 	}
 	return nil
@@ -300,13 +333,14 @@ func (v *validator) podsReady(sts *apps.StatefulSet) (bool, error) {
 		glog.Errorf("listing pods for sts %v/%v", sts.Namespace, sts.Name)
 		return false, nil
 	}
+	var replicas int
 	if sts.Spec.Replicas == nil {
-		glog.Errorf("replicas are nil for sts %v/%v", sts.Namespace, sts.Name)
-		return false, nil
+		replicas = 1
+	} else {
+		replicas = int(*sts.Spec.Replicas)
 	}
-	replicas := int(*sts.Spec.Replicas)
 	if len(pods) != replicas {
-		glog.V(4).Infof("replicas mismatch %v/%v %v!=%v", sts.Namespace, sts.Name, len(pods), replicas)
+		glog.V(4).Infof("  replicas mismatch %v/%v %v!=%v", sts.Namespace, sts.Name, len(pods), replicas)
 		return false, nil
 	}
 	for _, p := range pods {
@@ -318,11 +352,11 @@ func (v *validator) podsReady(sts *apps.StatefulSet) (bool, error) {
 }
 
 func (v *validator) beforeInit(run *vs.ValidationRun) error {
-	glog.Infof("before init run %v/%v", run.Namespace, run.Name)
+	glog.Infof(" before init run %v/%v", run.Namespace, run.Name)
 	//TODO: validate the snapshots still exist
 	for k, v := range run.Spec.Snapshots {
 		if v == "" {
-			glog.V(4).Infof("run %v/%v missing snapshot %v", run.Namespace, run.Name, k)
+			glog.V(4).Infof("  run %v/%v missing snapshot %v", run.Namespace, run.Name, k)
 			return nil
 		}
 	}
@@ -331,24 +365,24 @@ func (v *validator) beforeInit(run *vs.ValidationRun) error {
 }
 
 func (v *validator) init(run *vs.ValidationRun) error {
-	glog.Infof("init run %v/%v", run.Namespace, run.Name)
+	glog.Infof(" init run %v/%v", run.Namespace, run.Name)
 	strategy, err := v.getStrategy(run)
 	if err != nil {
 		return err
 	}
-	glog.Infof("create snapshot %v/%v PVCs", run.Namespace, run.Name)
+	glog.Infof("  create snapshot %v/%v PVCs", run.Namespace, run.Name)
 	if err = v.createSnapshotPVCs(strategy, run); err != nil {
 		return err
 	}
-	glog.Infof("create snapshot %v/%v service", run.Namespace, run.Name)
+	glog.Infof("  create snapshot %v/%v service", run.Namespace, run.Name)
 	if err = v.createService(strategy.Spec.Service, run); err != nil {
 		return err
 	}
-	glog.Infof("create snapshot %v/%v sts", run.Namespace, run.Name)
+	glog.Infof("  create snapshot %v/%v sts", run.Namespace, run.Name)
 	if err = v.createSts(strategy.Spec.StatefulSet, run); err != nil {
 		return err
 	}
-	glog.Infof("create snapshot %v/%v init job", run.Namespace, run.Name)
+	glog.Infof("  create snapshot %v/%v init job", run.Namespace, run.Name)
 	if err = v.createJob(strategy.Spec.Init, run); err != nil {
 		return err
 	}
@@ -357,18 +391,18 @@ func (v *validator) init(run *vs.ValidationRun) error {
 }
 
 func (v *validator) beforePreValidation(run *vs.ValidationRun) error {
-	glog.Infof("before pre-validation run %v/%v", run.Namespace, run.Name)
+	glog.Infof(" before pre-validation run %v/%v", run.Namespace, run.Name)
 	run.Status.PreValidationStarted = &meta.Time{time.Now()}
 	return v.kube.UpdateValidationRun(run)
 }
 
 func (v *validator) preValidation(run *vs.ValidationRun) error {
-	glog.Infof("pre-validation run %v/%v", run.Namespace, run.Name)
+	glog.Infof(" pre-validation run %v/%v", run.Namespace, run.Name)
 	strategy, err := v.getStrategy(run)
 	if err != nil {
 		return err
 	}
-	glog.Infof("create snapshot %v/%v pre-validation job", run.Namespace, run.Name)
+	glog.Infof("  create snapshot %v/%v pre-validation job", run.Namespace, run.Name)
 	if err = v.createJob(strategy.Spec.PreValidation, run); err != nil {
 		return err
 	}
@@ -376,35 +410,67 @@ func (v *validator) preValidation(run *vs.ValidationRun) error {
 	return v.kube.UpdateValidationRun(run)
 }
 func (v *validator) beforeValidation(run *vs.ValidationRun) error {
-	glog.Infof("before validation run %v/%v", run.Namespace, run.Name)
+	glog.Infof(" before validation run %v/%v", run.Namespace, run.Name)
 	run.Status.ValidationStarted = &meta.Time{time.Now()}
 	return v.kube.UpdateValidationRun(run)
 }
 func (v *validator) validation(run *vs.ValidationRun) error {
-	glog.Infof("validation run %v/%v", run.Namespace, run.Name)
+	glog.Infof(" validation run %v/%v", run.Namespace, run.Name)
 	strategy, err := v.getStrategy(run)
 	if err != nil {
 		return e("getting strategy for run %v", err, run)
 	}
-	glog.Infof("create snapshot %v/%v validation job", run.Namespace, run.Name)
+	glog.Infof("  create snapshot %v/%v validation job", run.Namespace, run.Name)
 	if err = v.createJob(strategy.Spec.Validation, run); err != nil {
 		return e("creating job for run %v", err, run)
 	}
-	//TODO: annotate snapshots as valid
+	//TODO: annotate snapshots as valid with cinder disk UID
+	for claim, snapshot := range run.Spec.Snapshots {
+		s, err := v.kube.GetSnapshot(run.Namespace, snapshot)
+		if err != nil {
+			return e("getting snapshot %v for run %v", err, snapshot, run)
+		}
+		pvc, err := v.kube.GetPVC(run.Namespace, claim)
+		if err != nil {
+			return e("getting PVC %v for run %v", err, claim, run)
+		}
+		pv, err := v.kube.GetPV(pvc.Spec.VolumeName)
+		if err != nil {
+			return e("getting PV %v for PVC %v and run %v", err, pvc.Spec.VolumeName, claim, run)
+		}
+		if pv.Spec.Cinder == nil {
+			return fmt.Errorf("PV not cinder %v for PVC %v and run %v/%v", pv.Name, pvc.Name, run.Namespace, run.Name)
+		}
+		if err = v.kube.LabelSnapshot(s.Metadata.Namespace, s.Metadata.Name, "validated-cinder-id", pv.Spec.Cinder.VolumeID); err != nil {
+			return e("labeling snapshot %v for run %v", err, s, run)
+		}
+	}
 	run.Status.ValidationFinished = &meta.Time{time.Now()}
 	return v.kube.UpdateValidationRun(run)
 }
-
-func (v *validator) tearDown(run *vs.ValidationRun) error {
-	glog.V(4).Infof("teardown run %v/%v", run.Namespace, run.Name)
-	//TODO: implement this
-	return nil
+func (v *validator) beforeCleanup(run *vs.ValidationRun) error {
+	glog.Infof(" before cleanup run %v/%v", run.Namespace, run.Name)
+	run.Status.CleanupStarted = &meta.Time{time.Now()}
+	return v.kube.UpdateValidationRun(run)
+}
+func (v *validator) cleanup(run *vs.ValidationRun) error {
+	glog.Infof(" cleanup run %v/%v", run.Namespace, run.Name)
+	if !run.Spec.Cleanup {
+		glog.Infof(" cleanup run %v/%v paused", run.Namespace, run.Name)
+		return nil
+	}
+	v.kube.DeleteValidationRun(run)
+	for _, claim := range run.Spec.Claims {
+		v.kube.DeletePVC(&claim)
+	}
+	run.Status.CleanupFinished = &meta.Time{time.Now()}
+	return v.kube.UpdateValidationRun(run)
 }
 func (v *validator) ProcessValidationRun(run *vs.ValidationRun) (err error) {
 	//TODO: add mutex per validation strategy
 	glog.Infof("processing validation run %v/%v", run.Namespace, run.Name)
-	v.mutex.Lock()
-	defer v.mutex.Unlock()
+	//v.mutex.Lock()
+	//defer v.mutex.Unlock()
 
 	//TODO: do deep copy only when necessary
 	copy := run.DeepCopy()
@@ -420,8 +486,10 @@ func (v *validator) ProcessValidationRun(run *vs.ValidationRun) (err error) {
 		err = v.beforeValidation(copy)
 	} else if run.Status.ValidationFinished == nil {
 		err = v.validation(copy)
-	} else {
-		err = v.tearDown(copy)
+	} else if run.Status.CleanupStarted == nil {
+		err = v.beforeCleanup(copy)
+	} else if run.Status.CleanupFinished == nil {
+		err = v.cleanup(copy)
 	}
 
 	if err != nil {
@@ -448,8 +516,8 @@ func (v *validator) updateRun(run *vs.ValidationRun, snapshot *snap.VolumeSnapsh
 func (v *validator) ProcessSnapshot(snapshot *snap.VolumeSnapshot) (err error) {
 	//TODO: add mutex per validation strategy
 	glog.Infof("processing snapshot %v/%v", snapshot.Metadata.Namespace, snapshot.Metadata.Name)
-	v.mutex.Lock()
-	defer v.mutex.Unlock()
+	//v.mutex.Lock()
+	//defer v.mutex.Unlock()
 	run, new, err := v.getRun(snapshot)
 	if run != nil {
 		glog.V(4).Infof("got run %v/%v for snapshot %v/%v, new(%v)", run.Namespace, run.Name, snapshot.Metadata.Namespace, snapshot.Metadata.Name, new)

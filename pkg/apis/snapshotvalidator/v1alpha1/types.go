@@ -28,6 +28,7 @@ type ValidationStrategy struct {
 
 // ValidationStrategySpec
 type ValidationStrategySpec struct {
+	//TODO: rename to SnapshotPodSelector
 	Selector metav1.LabelSelector `json:"selector"`
 	//TODO: remove from here and keep in run only
 	Claims        map[string]corev1.PersistentVolumeClaim `json:"claims"`
@@ -70,16 +71,19 @@ type ValidationRun struct {
 type ValidationRunSpec struct {
 	Snapshots map[string]string                       `json:"snapshots"`
 	Claims    map[string]corev1.PersistentVolumeClaim `json:"claims"`
+	Cleanup   bool                                    `json:"cleanup"`
 }
 
 // ValidationRunStatus
 type ValidationRunStatus struct {
 	InitStarted           *metav1.Time `json:"initStarted,omitempty"`
 	InitFinished          *metav1.Time `json:"initFinished,omitempty"`
-	PreValidationStarted  *metav1.Time `json:"PreValidationStarted,omitempty"`
-	PreValidationFinished *metav1.Time `json:"PreValidationFinished,omitempty"`
+	PreValidationStarted  *metav1.Time `json:"preValidationStarted,omitempty"`
+	PreValidationFinished *metav1.Time `json:"preValidationFinished,omitempty"`
 	ValidationStarted     *metav1.Time `json:"validationStarted,omitempty"`
 	ValidationFinished    *metav1.Time `json:"validationFinished,omitempty"`
+	CleanupStarted        *metav1.Time `json:"cleanupStarted,omitempty"`
+	CleanupFinished       *metav1.Time `json:"cleanupFinished,omitempty"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
