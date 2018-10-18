@@ -54,8 +54,10 @@ type controller struct {
 	vrInformer      kcache.SharedIndexInformer
 	vrLister        vslister.ValidationRunLister
 
-	snapshotWorkqueue      workqueue.RateLimitingInterface
-	validationRunWorkqueue workqueue.RateLimitingInterface
+	//snapshotWorkqueue      workqueue.RateLimitingInterface
+	//validationRunWorkqueue workqueue.RateLimitingInterface
+	snapshotWorkqueue      workqueue.Interface
+	validationRunWorkqueue workqueue.Interface
 	validator              validator.Validator
 }
 
@@ -90,10 +92,8 @@ func NewController(
 		vrInformer:      svfac.Snapshotvalidator().V1alpha1().ValidationRuns().Informer(),
 		vrLister:        svfac.Snapshotvalidator().V1alpha1().ValidationRuns().Lister(),
 
-		snapshotWorkqueue:      workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "VolumeSnapshots"),
-		validationRunWorkqueue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "ValidatorRun"),
-		/*snapshotWorkqueue:      workqueue.NewNamedQueue("VolumeSnapshots"),
-		validationRunWorkqueue: workqueue.NewNamedQueue("ValidatorRun"),*/
+		snapshotWorkqueue:      workqueue.NewNamed("VolumeSnapshots"),
+		validationRunWorkqueue: workqueue.NewNamed("ValidatorRun"),
 	}
 
 	c.validator = validator.NewValidator(c)
@@ -263,7 +263,8 @@ func (c *controller) enqueueValidatorRun(obj interface{}) {
 	} else {
 		//TODO: learn how to properly sync cache
 		time.Sleep(100 * time.Millisecond)
-		c.validationRunWorkqueue.AddRateLimited(key)
+		//c.validationRunWorkqueue.AddRateLimited(key)
+		c.validationRunWorkqueue.Add(key)
 	}
 }
 
@@ -281,7 +282,8 @@ func (c *controller) enqueueSnapshot(obj interface{}) {
 	} else {
 		//TODO: learn how to properly sync cache
 		time.Sleep(100 * time.Millisecond)
-		c.snapshotWorkqueue.AddRateLimited(key)
+		//c.snapshotWorkqueue.AddRateLimited(key)
+		c.snapshotWorkqueue.Add(key)
 	}
 }
 
@@ -334,23 +336,20 @@ func (c *controller) processNextValidation() (bool, error) {
 	defer c.validationRunWorkqueue.Done(obj)
 	key, ok := obj.(string)
 	if !ok {
-		c.validationRunWorkqueue.Forget(obj)
 		return false, fmt.Errorf("expected string in validation workqueue but got %#v", obj)
 	}
 	obj, ok, err := c.vrInformer.GetStore().GetByKey(key)
 	if !ok || err != nil {
-		c.validationRunWorkqueue.Forget(obj)
 		return false, fmt.Errorf("key %v not found in store", key)
 	}
 	validationRun, ok := obj.(*vs.ValidationRun)
 	if !ok {
-		c.validationRunWorkqueue.Forget(obj)
 		return false, fmt.Errorf("expected type ValidationRun for key %v but received type %T", key, obj)
 	}
 	if err := c.validator.ProcessValidationRun(validationRun); err != nil {
+		defer c.validationRunWorkqueue.Add(key)
 		return false, fmt.Errorf("processing validationRun %v failed: %v", key, err)
 	}
-	c.validationRunWorkqueue.Forget(obj)
 	glog.Infof("Successfully synced '%s'", key)
 	return false, nil
 }
@@ -363,24 +362,21 @@ func (c *controller) processNextSnapshot() (bool, error) {
 	defer c.snapshotWorkqueue.Done(obj)
 	key, ok := obj.(string)
 	if !ok {
-		c.snapshotWorkqueue.Forget(obj)
 		return false, fmt.Errorf("expected string in workqueue but got %#v", obj)
 	}
 	obj, ok, err := c.snapshotStore.GetByKey(key)
 	if !ok || err != nil {
-		c.snapshotWorkqueue.Forget(obj)
 		return false, fmt.Errorf("key %v not found in store", key)
 	}
 	snapshot, ok := obj.(*snap.VolumeSnapshot)
 	if !ok {
-		c.snapshotWorkqueue.Forget(obj)
 		return false, fmt.Errorf("expected type VolumeSnapshot for key %v but received type %T", key, obj)
 	}
 	if err := c.validator.ProcessSnapshot(snapshot); err != nil {
+		defer c.snapshotWorkqueue.Add(key)
 		return false, fmt.Errorf("processing VolumeSnapshot %v failed: %v", key, err)
 	}
 
-	c.snapshotWorkqueue.Forget(obj)
 	glog.Infof("Successfully synced '%s'", key)
 	return false, nil
 }

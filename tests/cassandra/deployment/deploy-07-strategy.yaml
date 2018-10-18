@@ -144,8 +144,8 @@ spec:
               ORIGINAL=$(cqlsh cassandra -e 'SELECT count FROM snapshot_helper.index_table WHERE id = 6ab09bec-e68e-48d9-a5f8-97e6fb4c9b47;' | awk 'NR==4{print($1)}') ;
               SNAPSHOT=$(cqlsh snapshot-cassandra -e 'SELECT count FROM snapshot_helper.index_table WHERE id = 6ab09bec-e68e-48d9-a5f8-97e6fb4c9b47;' | awk 'NR==4{print($1)}') ;
               if [[ $SNAPSHOT == '' ]]; then SNAPSHOT=0; fi ;
-              ORIGINAL=$((ORIGINAL-1)) ;
-              if [[ $ORIGINAL != $SNAPSHOT ]]; then echo failed; exit 1; else echo success; fi ;
+              echo \"$ORIGINAL == $SNAPSHOT+1\" ;
+              if (( ORIGINAL == SNAPSHOT+1 )); then echo success; else echo failed; exit 1; fi ;
               TEST_O=$(cqlsh cassandra -e 'SELECT count FROM test.test_table WHERE id = aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa' | awk 'NR==4{print($1)}') ;
               TEST_S=$(cqlsh snapshot-cassandra -e 'SELECT count FROM test.test_table WHERE id = aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa' | awk 'NR==4{print($1)}') ;
               if [[ $TEST_O != $TEST_S ]]; then echo failed test; exit 1; else echo success test; fi ; "]
