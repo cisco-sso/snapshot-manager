@@ -8,9 +8,11 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/scheme"
 	restclient "k8s.io/client-go/rest"
+	//"k8s.io/client-go/tools/clientcmd"
 
 	svclientset "github.com/cisco-sso/snapshot-validator/pkg/client/clientset/versioned"
 	svs "github.com/cisco-sso/snapshot-validator/pkg/client/clientset/versioned/scheme"
+	"github.com/cisco-sso/snapshot-validator/pkg/validator"
 	snapshotclient "github.com/kubernetes-incubator/external-storage/snapshot/pkg/client"
 	"k8s.io/sample-controller/pkg/signals"
 )
@@ -20,35 +22,43 @@ func main() {
 	flag.Parse()
 	flag.Set("logtostderr", "true")
 
-	kubeClient, snapshotClient, svClient := clients()
-	controller := NewController(kubeClient, snapshotClient, svClient, stopCh)
+	clients := clients()
+	controller := validator.NewController(clients, stopCh)
 
 	if err := controller.Run(1, stopCh); err != nil {
 		glog.Fatalf("Error running controller: %v", err)
 	}
 }
 
-func clients() (kubernetes.Interface, *restclient.RESTClient, svclientset.Interface) {
-	kubeconfig, err := restclient.InClusterConfig()
+func buildConfig() (*restclient.Config, error) {
+	/*kubeconfigPath := "/Users/jawoznia/tmp/kustomize/sre1.csco.cloud"
+	masterUrl := "" // "64.102.180.113"
+	return clientcmd.BuildConfigFromFlags(masterUrl, kubeconfigPath)*/
+	return restclient.InClusterConfig()
+}
+
+func clients() validator.Clients {
+	c := validator.Clients{}
+	kubeconfig, err := buildConfig()
 	if err != nil {
 		glog.Fatalf("Error building kubeconfig: %v", err)
 	}
 
-	kubeClient, err := kubernetes.NewForConfig(kubeconfig)
+	c.KubeClientset, err = kubernetes.NewForConfig(kubeconfig)
 	if err != nil {
 		glog.Fatalf("Error building kubernetes kube client: %v", err)
 	}
 
-	snapshotClient, _, err := snapshotclient.NewClient(kubeconfig)
+	c.SnapshotClient, _, err = snapshotclient.NewClient(kubeconfig)
 	if err != nil {
 		glog.Fatalf("Error building kubernetes snapshot client: %v", err)
 	}
 
-	svClient, err := svclientset.NewForConfig(kubeconfig)
+	c.SvClientset, err = svclientset.NewForConfig(kubeconfig)
 	if err != nil {
 		glog.Fatalf("Error building kubernetes snapshot validator client: %v", err)
 	}
 
 	utilruntime.Must(svs.AddToScheme(scheme.Scheme))
-	return kubeClient, snapshotClient, svClient
+	return c
 }

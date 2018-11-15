@@ -1,6 +1,6 @@
 package validator
 
-import (
+/*import (
 	vs "github.com/cisco-sso/snapshot-validator/pkg/apis/snapshotvalidator/v1alpha1"
 	snap "github.com/kubernetes-incubator/external-storage/snapshot/pkg/apis/crd/v1"
 	apps "k8s.io/api/apps/v1"
@@ -302,4 +302,4 @@ func TestBasicFlow(t *testing.T) {
 	if len(c.newJobs) != 3 {
 		t.Fatal("Expected 3 init job but got", len(c.newJobs))
 	}
-}
+}*/

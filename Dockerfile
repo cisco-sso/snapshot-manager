@@ -4,6 +4,7 @@ WORKDIR /go/src/github.com/cisco-sso/snapshot-validator
 COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o snapshot-validator .
 
-FROM scratch
+FROM ubuntu
+COPY ./vendor/kubectl /bin/kubectl
 COPY --from=golang /go/src/github.com/cisco-sso/snapshot-validator/snapshot-validator /
 ENTRYPOINT ["/snapshot-validator"]
