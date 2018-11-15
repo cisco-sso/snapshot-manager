@@ -23,6 +23,11 @@ required = [
   name = "k8s.io/code-generator"
   version = "kubernetes-1.12.0"
 
+[[constraint]]
+  name = "sigs.k8s.io/kustomize"
+  source = "https://github.com/wozniakjan/kustomize"
+  branch = "kubernetes-1.12.0"
+
 [prune]
   go-tests = true
   unused-packages = true
