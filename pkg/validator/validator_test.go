@@ -1,6 +1,7 @@
 package validator
 
-/*import (
+import (
+	"fmt"
 	vs "github.com/cisco-sso/snapshot-validator/pkg/apis/snapshotvalidator/v1alpha1"
 	snap "github.com/kubernetes-incubator/external-storage/snapshot/pkg/apis/crd/v1"
 	apps "k8s.io/api/apps/v1"
@@ -8,6 +9,7 @@ package validator
 	core "k8s.io/api/core/v1"
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	"strings"
 	"testing"
 )
 
@@ -18,65 +20,108 @@ type basicClient struct {
 	newPVCs               []*core.PersistentVolumeClaim
 	newJobs               []*batch.Job
 	newSts                []*apps.StatefulSet
+	pvcs                  map[string]*core.PersistentVolumeClaim
+	jobs                  map[string]*batch.Job
 }
 
 func newBasicClient() *basicClient {
+
+	pvc1 := core.PersistentVolumeClaim{}
+	pvc1.Name = "data-test-0"
+	pvc1.Namespace = "test"
+	pvc1.Status.Phase = core.ClaimBound
+	pvc2 := core.PersistentVolumeClaim{}
+	pvc2.Name = "data-test-1"
+	pvc2.Namespace = "test"
+	pvc2.Status.Phase = core.ClaimBound
+
 	return &basicClient{
 		validationRuns: make(map[string]*vs.ValidationRun),
+		pvcs: map[string]*core.PersistentVolumeClaim{
+			"data-test-0": &pvc1,
+			"data-test-1": &pvc2,
+		},
+		jobs: make(map[string]*batch.Job),
 	}
 }
-
-func CreateService(*core.Service) error {
+func (c *basicClient) CreateService(*core.Service) error {
 	return nil
 }
-func GetSts(string, string) (*apps.StatefulSet, error) {
-	return nil, nil
-}
-func GetService(string, string) (*core.Service, error) {
-	return nil, nil
-}
-
-func SetStsReplica(string, string, int) error {
-	return
-}
-func (c *basicClient) ListStrategies() ([]*vs.ValidationStrategy, error) {
-	pvc1 := core.PersistentVolumeClaim{}
-	pvc1.Name = "snapshot-pvc1"
-	pvc1.Namespace = "test"
-	pvc2 := core.PersistentVolumeClaim{}
-	pvc2.Name = "snapshot-pvc2"
-	pvc2.Namespace = "test"
-	init := batch.Job{}
-	init.Name = "init"
-	init.Namespace = "test"
+func (c *basicClient) GetSts(string, string) (*apps.StatefulSet, error) {
 	sts := apps.StatefulSet{}
 	sts.Name = "snapshot-cassandra"
 	sts.Namespace = "test"
 	var replicas int32
 	replicas = 2
 	sts.Spec.Replicas = &replicas
-	preval := batch.Job{}
-	preval.Name = "preval"
-	preval.Namespace = "test"
-	val := batch.Job{}
-	val.Name = "val"
-	val.Namespace = "test"
+	sts.Spec.Selector = &meta.LabelSelector{
+		MatchLabels: map[string]string{
+			"app": "test",
+		},
+	}
+	return &sts, nil
+}
+func (c *basicClient) GetService(string, string) (*core.Service, error) {
+	return nil, fmt.Errorf("not implemented")
+}
 
+func (c *basicClient) CreateObjectYAML(string) error {
+	return nil
+}
+func (c *basicClient) GetObjectYAML(string, vs.ResourceName) (string, error) {
+	return "", nil
+}
+func (c *basicClient) SetStsReplica(string, string, int) error {
+	return fmt.Errorf("not implemented")
+}
+func (c *basicClient) DeletePVC(pvc *core.PersistentVolumeClaim) error {
+	delete(c.pvcs, pvc.Name)
+	return nil
+}
+func (c *basicClient) DeleteValidationRun(*vs.ValidationRun) error {
+	return fmt.Errorf("not implemented")
+}
+func (c *basicClient) GetPV(name string) (*core.PersistentVolume, error) {
+	pv := core.PersistentVolume{}
+	pv.Name = name
+	pv.Spec.Cinder = &core.CinderPersistentVolumeSource{
+		VolumeID: "VolumeID",
+		FSType:   "FSType",
+	}
+	return &pv, nil
+}
+func (c *basicClient) GetSnapshot(ns string, n string) (*snap.VolumeSnapshot, error) {
+	s := snap.VolumeSnapshot{}
+	s.Metadata.Name = n
+	s.Metadata.Namespace = ns
+	return &s, nil
+}
+func (c *basicClient) LabelSnapshot(string, string, string, string) error {
+	return nil
+}
+func (c *basicClient) ListPVCs(selector labels.Selector) ([]*core.PersistentVolumeClaim, error) {
+	var pvcs []*core.PersistentVolumeClaim
+	for _, v := range c.pvcs {
+		pvcs = append(pvcs, v)
+	}
+	return pvcs, nil
+}
+func (c *basicClient) ListStrategies() ([]*vs.ValidationStrategy, error) {
 	strategy := vs.ValidationStrategy{
 		Spec: vs.ValidationStrategySpec{
-			Selector: meta.LabelSelector{
-				MatchLabels: map[string]string{
-					"app": "test",
-				},
+			StsType: &vs.StatefulSetType{
+				Name:  "test",
+				Claim: "data",
 			},
-			Claims: map[string]core.PersistentVolumeClaim{
-				"pvc1": pvc1,
-				"pvc2": pvc2,
+			AdditionalResources: []vs.ResourceName{},
+			Kustomization: vs.Kustomization{
+				NamePrefix: "snapshot-",
 			},
-			Init:          &init,
-			StatefulSet:   &sts,
-			PreValidation: &preval,
-			Validation:    &val,
+			Hooks: &vs.Hooks{
+				Init:          &batch.JobSpec{},
+				PreValidation: &batch.JobSpec{},
+				Validation:    &batch.JobSpec{},
+			},
 		},
 	}
 	strategy.Name = "basic"
@@ -102,7 +147,7 @@ func (c *basicClient) ListPods(labels.Selector) ([]*core.Pod, error) {
 		},
 	}
 	pod1.Spec.Volumes[0].PersistentVolumeClaim = &core.PersistentVolumeClaimVolumeSource{
-		ClaimName: "pvc1",
+		ClaimName: "data-test-0",
 	}
 	pod1.Status.Phase = core.PodRunning
 	pod2 := core.Pod{}
@@ -115,23 +160,22 @@ func (c *basicClient) ListPods(labels.Selector) ([]*core.Pod, error) {
 		},
 	}
 	pod2.Spec.Volumes[0].PersistentVolumeClaim = &core.PersistentVolumeClaimVolumeSource{
-		ClaimName: "pvc2",
+		ClaimName: "data-test-1",
 	}
 	pod2.Status.Phase = core.PodRunning
 
 	return []*core.Pod{&pod1, &pod2}, nil
 }
 func (c *basicClient) CreatePVC(pvc *core.PersistentVolumeClaim) error {
+	pvc.Status.Phase = core.ClaimBound
 	c.newPVCs = append(c.newPVCs, pvc)
-	return nil
-}
-func (c *basicClient) CreateValidationRun(v *vs.ValidationRun) error {
-	c.newValidationRuns = append(c.newValidationRuns, v)
-	c.validationRuns[v.Name] = v
+	c.pvcs[pvc.Name] = pvc
 	return nil
 }
 func (c *basicClient) CreateJob(j *batch.Job) error {
 	c.newJobs = append(c.newJobs, j)
+	j.Status.Succeeded = 1
+	c.jobs[j.Name] = j
 	return nil
 }
 func (c *basicClient) CreateStatefulSet(s *apps.StatefulSet) error {
@@ -143,19 +187,24 @@ func (c *basicClient) UpdateValidationRun(v *vs.ValidationRun) error {
 	c.validationRuns[v.Name] = v
 	return nil
 }
+func (c *basicClient) CreateValidationRun(v *vs.ValidationRun) error {
+	c.newValidationRuns = append(c.newValidationRuns, v)
+	c.validationRuns[v.Name] = v
+	return nil
+}
 func (c *basicClient) GetPVC(namespace, name string) (*core.PersistentVolumeClaim, error) {
-	pvc := core.PersistentVolumeClaim{}
-	pvc.Name = name
-	pvc.Namespace = namespace
-	pvc.Status.Phase = core.ClaimBound
-	return &pvc, nil
+	pvc := c.pvcs[name]
+	if pvc == nil {
+		return nil, fmt.Errorf("PVC %v not found", name)
+	}
+	return pvc, nil
 }
 func (c *basicClient) GetJob(namespace, name string) (*batch.Job, error) {
-	job := batch.Job{}
-	job.Name = name
-	job.Namespace = namespace
-	job.Status.Succeeded = 1
-	return &job, nil
+	job := c.jobs[name]
+	if job == nil {
+		return nil, fmt.Errorf("job %v not found", name)
+	}
+	return job, nil
 }
 
 func snapshot(name string) *snap.VolumeSnapshot {
@@ -169,7 +218,7 @@ func snapshot(name string) *snap.VolumeSnapshot {
 func TestBasicSnapshotPVC1(t *testing.T) {
 	c := newBasicClient()
 	v := NewValidator(c)
-	s := snapshot("pvc1")
+	s := snapshot("data-test-0")
 	err := v.ProcessSnapshot(s)
 	if err != nil {
 		t.Fatal("Expected no error but got", err)
@@ -181,24 +230,24 @@ func TestBasicSnapshotPVC1(t *testing.T) {
 		t.Fatal("Expected 0 updated validation runs but got", len(c.updatedValidationRuns))
 	}
 	run := c.newValidationRuns[0]
-	if len(run.Spec.Snapshots) != 2 {
-		t.Fatal("Expected 2 PVCs in snapshot run but got", len(run.Spec.Snapshots))
+	if len(run.Spec.ClaimsToSnapshots) != 2 {
+		t.Fatal("Expected 2 PVCs in snapshot run but got", len(run.Spec.ClaimsToSnapshots))
 	}
-	if run.Spec.Snapshots[s.Spec.PersistentVolumeClaimName] != s.Metadata.Name {
+	if run.Spec.ClaimsToSnapshots[s.Spec.PersistentVolumeClaimName] != s.Metadata.Name {
 		t.Fatal("Expected run snapshot", s.Spec.PersistentVolumeClaimName,
-			"to point to snapshot", s.Metadata.Name, "but is pointing to", run.Spec.Snapshots[s.Spec.PersistentVolumeClaimName])
+			"to point to snapshot", s.Metadata.Name, "but is pointing to", run.Spec.ClaimsToSnapshots[s.Spec.PersistentVolumeClaimName])
 	}
 }
 
 func TestBasicSnapshotPVC1and2(t *testing.T) {
 	c := newBasicClient()
 	v := NewValidator(c)
-	s1 := snapshot("pvc1")
+	s1 := snapshot("data-test-0")
 	err := v.ProcessSnapshot(s1)
 	if err != nil {
 		t.Error("Expected no error but got", err)
 	}
-	s2 := snapshot("pvc2")
+	s2 := snapshot("data-test-1")
 	err = v.ProcessSnapshot(s2)
 	if err != nil {
 		t.Fatal("Expected no error but got", err)
@@ -210,32 +259,32 @@ func TestBasicSnapshotPVC1and2(t *testing.T) {
 		t.Fatal("Expected 1 updated validation runs but got", len(c.updatedValidationRuns))
 	}
 	run := c.updatedValidationRuns[0]
-	if len(run.Spec.Snapshots) != 2 {
-		t.Fatal("Expected 2 PVCs in snapshot run but got", len(run.Spec.Snapshots))
+	if len(run.Spec.ClaimsToSnapshots) != 2 {
+		t.Fatal("Expected 2 PVCs in snapshot run but got", len(run.Spec.ClaimsToSnapshots))
 	}
-	if run.Spec.Snapshots[s1.Spec.PersistentVolumeClaimName] != s1.Metadata.Name {
+	if run.Spec.ClaimsToSnapshots[s1.Spec.PersistentVolumeClaimName] != s1.Metadata.Name {
 		t.Fatal("Expected run snapshot", s1.Spec.PersistentVolumeClaimName,
-			"to point to snapshot", s1.Metadata.Name, "but is pointing to", run.Spec.Snapshots[s1.Spec.PersistentVolumeClaimName])
+			"to point to snapshot", s1.Metadata.Name, "but is pointing to", run.Spec.ClaimsToSnapshots[s1.Spec.PersistentVolumeClaimName])
 	}
-	if run.Spec.Snapshots[s2.Spec.PersistentVolumeClaimName] != s2.Metadata.Name {
+	if run.Spec.ClaimsToSnapshots[s2.Spec.PersistentVolumeClaimName] != s2.Metadata.Name {
 		t.Fatal("Expected run snapshot", s2.Spec.PersistentVolumeClaimName,
-			"to point to snapshot", s2.Metadata.Name, "but is pointing to", run.Spec.Snapshots[s2.Spec.PersistentVolumeClaimName])
+			"to point to snapshot", s2.Metadata.Name, "but is pointing to", run.Spec.ClaimsToSnapshots[s2.Spec.PersistentVolumeClaimName])
 	}
 }
 
 func TestBasicFlow(t *testing.T) {
 	c := newBasicClient()
 	v := NewValidator(c)
-	s1 := snapshot("pvc1")
+	s1 := snapshot("data-test-0")
 	err := v.ProcessSnapshot(s1)
 	if err != nil {
 		t.Fatal("Expected no error but got", err)
 	}
 	err = v.ProcessValidationRun(c.newValidationRuns[0])
-	if err != nil {
-		t.Fatal("Expected no error but got", err)
+	if err != nil && !strings.HasSuffix(err.Error(), "is missing snapshot") {
+		t.Fatal("Expected error mismatch", err)
 	}
-	s2 := snapshot("pvc2")
+	s2 := snapshot("data-test-1")
 	err = v.ProcessSnapshot(s2)
 	if err != nil {
 		t.Fatal("Expected no error but got", err)
@@ -253,6 +302,12 @@ func TestBasicFlow(t *testing.T) {
 	}
 
 	err = v.ProcessValidationRun(run)
+	if err != nil {
+		t.Fatal("Expected no error but got", err)
+	}
+	if len(c.updatedValidationRuns) != 3 {
+		t.Fatal("Expected 3 updated validation runs but got", len(c.updatedValidationRuns))
+	}
 	run = c.updatedValidationRuns[2]
 	if run.Status.InitFinished == nil || run.Status.PreValidationStarted != nil {
 		t.Fatal("Expected init to have finished")
@@ -263,9 +318,9 @@ func TestBasicFlow(t *testing.T) {
 	if len(c.newJobs) != 1 {
 		t.Fatal("Expected 1 init job but got", len(c.newJobs))
 	}
-	if len(c.newSts) != 1 {
+	/*if len(c.newSts) != 1 {
 		t.Fatal("Expected 1 stateful set but got", len(c.newSts))
-	}
+	}*/
 
 	err = v.ProcessValidationRun(run)
 	run = c.updatedValidationRuns[3]
@@ -302,4 +357,4 @@ func TestBasicFlow(t *testing.T) {
 	if len(c.newJobs) != 3 {
 		t.Fatal("Expected 3 init job but got", len(c.newJobs))
 	}
-}*/
+}
