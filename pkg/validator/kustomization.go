@@ -105,21 +105,21 @@ func kustomizeClaims(claims map[string]*core.PersistentVolumeClaim, strategy *vs
 func (v *validator) kustomize(strategy *vs.ValidationStrategy, run *vs.ValidationRun) error {
 	yaml, err := v.getYamlObjectMap(strategy)
 	if err != nil {
-		return e("failed kustomization for strategy %v, run %v", err, strategy, run)
+		return e("failed kustomization", err)
 	}
 	root := "/" + run.Name
 	fs, err := initFakeFs(root, yaml, strategy.Spec.Kustomization)
 	if err != nil {
-		return e("failed to initFakeFs for strategy %v, run %v", err, strategy, run)
+		return e("failed to initFakeFs", err)
 	}
 	out := bytes.NewBufferString("")
 	if err = runKustomizeBuild(root, out, fs); err != nil {
-		return e("failed to run kustomize for strategy %v, run %v", err, strategy, run)
+		return e("failed to run kustomize", err)
 	}
 	run.Spec.Objects.Kustomized = append(run.Spec.Objects.Kustomized, out.String())
 	claims, err := v.getClaims(run)
 	if err != nil {
-		return e("failed to get claims for strategy  %v, run %v", err, strategy, run)
+		return e("failed to get claims", err)
 	}
 	kustClaims := kustomizeClaims(claims, strategy)
 	run.Spec.Objects.Claims = kustClaims

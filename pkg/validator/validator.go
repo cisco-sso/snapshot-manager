@@ -34,12 +34,11 @@ func NewValidator(kube KubeCalls) Validator {
 }
 
 func (v *validator) beforeInit(run *vs.ValidationRun) error {
-	glog.Infof(" before init run %v/%v", run.Namespace, run.Name)
+	glog.V(2).Infof("before init run %v/%v", run.Namespace, run.Name)
 	//TODO: validate the snapshots still exist
 	for k, v := range run.Spec.ClaimsToSnapshots {
 		if v == "" {
-			glog.V(4).Infof("  run %v/%v missing snapshot %v", run.Namespace, run.Name, k)
-			return nil
+			return fmt.Errorf("claim %v is missing snapshot", k)
 		}
 	}
 	run.Status.InitStarted = &meta.Time{time.Now()}
@@ -47,40 +46,44 @@ func (v *validator) beforeInit(run *vs.ValidationRun) error {
 }
 
 func (v *validator) init(run *vs.ValidationRun) error {
-	glog.Infof(" init run %v/%v", run.Namespace, run.Name)
+	glog.V(2).Infof("init run %v/%v", run.Namespace, run.Name)
 	strategy, err := v.getStrategy(run)
 	if err != nil {
-		return err
+		return e("failed getting strategy", err)
 	}
-	glog.Infof("  create snapshot %v/%v PVCs", run.Namespace, run.Name)
+	glog.V(4).Infof("kustomize run %v/%v", run.Namespace, run.Name)
+	if err = v.kustomize(strategy, run); err != nil {
+		return e("failed kustomize", err)
+	}
+	glog.V(4).Infof("create snapshot PVCs for run %v/%v", run.Namespace, run.Name)
 	if err = v.createSnapshotPVCs(run); err != nil {
-		return err
+		return e("failed to create snapshot PVCs", err)
 	}
-	glog.Infof("  create snapshot %v/%v objects", run.Namespace, run.Name)
+	glog.V(4).Infof("create snapshot objects for run %v/%v", run.Namespace, run.Name)
 	if err = v.createObjects(run.Spec.Objects.Kustomized); err != nil {
-		return err
+		return e("failed to create kustomized objects", err)
 	}
-	glog.Infof("  create snapshot %v/%v init job", run.Namespace, run.Name)
+	glog.V(4).Infof("create snapshot init job for run %v/%v", run.Namespace, run.Name)
 	if err = v.createJob("init", strategy.Spec.Hooks.Init, run); err != nil {
-		return err
+		return e("failed to create init job", err)
 	}
 	run.Status.InitFinished = &meta.Time{time.Now()}
 	return v.kube.UpdateValidationRun(run)
 }
 
 func (v *validator) beforePreValidation(run *vs.ValidationRun) error {
-	glog.Infof(" before pre-validation run %v/%v", run.Namespace, run.Name)
+	glog.V(2).Infof("before pre-validation run %v/%v", run.Namespace, run.Name)
 	run.Status.PreValidationStarted = &meta.Time{time.Now()}
 	return v.kube.UpdateValidationRun(run)
 }
 
 func (v *validator) preValidation(run *vs.ValidationRun) error {
-	glog.Infof(" pre-validation run %v/%v", run.Namespace, run.Name)
+	glog.V(2).Infof("pre-validation run %v/%v", run.Namespace, run.Name)
 	strategy, err := v.getStrategy(run)
 	if err != nil {
 		return err
 	}
-	glog.Infof("  create snapshot %v/%v pre-validation job", run.Namespace, run.Name)
+	glog.V(4).Infof("create snapshot %v/%v pre-validation job", run.Namespace, run.Name)
 	if err = v.createJob("prevalidation", strategy.Spec.Hooks.PreValidation, run); err != nil {
 		return err
 	}
@@ -89,18 +92,18 @@ func (v *validator) preValidation(run *vs.ValidationRun) error {
 }
 
 func (v *validator) beforeValidation(run *vs.ValidationRun) error {
-	glog.Infof(" before validation run %v/%v", run.Namespace, run.Name)
+	glog.V(2).Infof("before validation run %v/%v", run.Namespace, run.Name)
 	run.Status.ValidationStarted = &meta.Time{time.Now()}
 	return v.kube.UpdateValidationRun(run)
 }
 
 func (v *validator) validation(run *vs.ValidationRun) error {
-	glog.Infof(" validation run %v/%v", run.Namespace, run.Name)
+	glog.V(2).Infof("validation run %v/%v", run.Namespace, run.Name)
 	strategy, err := v.getStrategy(run)
 	if err != nil {
 		return e("getting strategy for run %v", err, run)
 	}
-	glog.Infof("  create snapshot %v/%v validation job", run.Namespace, run.Name)
+	glog.V(4).Infof("create snapshot %v/%v validation job", run.Namespace, run.Name)
 	if err = v.createJob("validation", strategy.Spec.Hooks.Validation, run); err != nil {
 		return e("creating job for run %v", err, run)
 	}
@@ -120,7 +123,7 @@ func (v *validator) validation(run *vs.ValidationRun) error {
 		if pv.Spec.Cinder == nil {
 			return fmt.Errorf("PV not cinder %v for PVC %v and run %v/%v", pv.Name, pvc.Name, run.Namespace, run.Name)
 		}
-		if err = v.kube.LabelSnapshot(s.Metadata.Namespace, s.Metadata.Name, "validated-cinder-id", pv.Spec.Cinder.VolumeID); err != nil {
+		if err = v.kube.LabelSnapshot(s.Metadata.Namespace, s.Metadata.Name, label, id); err != nil {
 			return e("labeling snapshot %v for run %v", err, s, run)
 		}
 	}
@@ -129,15 +132,15 @@ func (v *validator) validation(run *vs.ValidationRun) error {
 }
 
 func (v *validator) beforeCleanup(run *vs.ValidationRun) error {
-	glog.Infof(" before cleanup run %v/%v", run.Namespace, run.Name)
+	glog.V(2).Infof("before cleanup run %v/%v", run.Namespace, run.Name)
 	run.Status.CleanupStarted = &meta.Time{time.Now()}
 	return v.kube.UpdateValidationRun(run)
 }
 
 func (v *validator) cleanup(run *vs.ValidationRun) error {
-	glog.Infof(" cleanup run %v/%v", run.Namespace, run.Name)
+	glog.V(2).Infof("cleanup run %v/%v", run.Namespace, run.Name)
 	if !run.Spec.Cleanup {
-		glog.Infof(" cleanup run %v/%v paused", run.Namespace, run.Name)
+		glog.V(2).Infof("cleanup run %v/%v paused", run.Namespace, run.Name)
 		return nil
 	}
 	v.kube.DeleteValidationRun(run)
@@ -175,9 +178,9 @@ func (v *validator) ProcessValidationRun(run *vs.ValidationRun) (err error) {
 	}
 
 	if err != nil {
-		err = e("processing validator run %v failed", err, run)
+		err = e("Error processing validator run %v", err, run)
 	} else {
-		glog.Infof("finished processing validator run %v/%v", run.Namespace, run.Name)
+		glog.V(2).Infof("finished processing validator run %v/%v", run.Namespace, run.Name)
 	}
 	return
 }

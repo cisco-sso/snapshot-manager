@@ -188,25 +188,28 @@ func (v *validator) initRun(strategy *vs.ValidationStrategy) (*vs.ValidationRun,
 	return run, nil
 }
 
-func (v *validator) getRun(snapshot *snap.VolumeSnapshot) (run *vs.ValidationRun, new bool, err error) {
+func (v *validator) getRun(snapshot *snap.VolumeSnapshot) (*vs.ValidationRun, bool, error) {
 	pod, err := v.findPod(snapshot)
+	new, failed := true, false
 	if err != nil {
-		return
+		return nil, failed, err
 	}
 	strategy, err := v.matchStrategy(pod)
 	if err != nil {
-		return
+		return nil, failed, err
 	}
-	run, err = v.matchRun(strategy)
+	run, err := v.matchRun(strategy)
 	if err != nil {
-		return
+		return nil, failed, err
 	}
 	if run == nil {
 		run, err = v.initRun(strategy)
-		new = err != nil
-		return
+		if err != nil {
+			return nil, failed, err
+		}
+		return run, new, nil
 	}
-	return
+	return run, !new, nil
 }
 
 func (v *validator) getStrategy(run *vs.ValidationRun) (*vs.ValidationStrategy, error) {
