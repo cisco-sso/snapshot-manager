@@ -179,10 +179,6 @@ func (v *validator) initRun(strategy *vs.ValidationStrategy) (*vs.ValidationRun,
 		Name:               "cassandra",
 		BlockOwnerDeletion: &block,
 	}}
-	err = v.kustomize(strategy, run)
-	if err != nil {
-		return nil, e("kustomization of strategy %v for run %v failed", err, strategy, run)
-	}
 	glog.V(4).Infof("init run %v/%v from strategy - %#v", run.Namespace, run.Name, strategy)
 	glog.V(4).Infof("init run %v/%v - %#v", run.Namespace, run.Name, run)
 	return run, nil
@@ -360,6 +356,14 @@ func (v *validator) pvcsBound(run *vs.ValidationRun) bool {
 		}
 	}
 	return true
+}
+
+func getId(pv *core.PersistentVolume) (string, string, error) {
+	//TODO add other volume sources
+	if pv.Spec.Cinder != nil {
+		return "validated-cinder-volume", pv.Spec.Cinder.VolumeID, nil
+	}
+	return "unknown", "unknown", fmt.Errorf("TODO: implement getId for other than cinder source")
 }
 
 func (v *validator) createObjects(obj []string) error {

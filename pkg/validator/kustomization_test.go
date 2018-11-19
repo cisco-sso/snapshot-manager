@@ -258,4 +258,6 @@ func TestKustomization(t *testing.T) {
 		cOut := column(expect, got)
 		t.Fatal(fmt.Errorf("[expect | got]\n%v", cOut))
 	}
+	//pvcs
+
 }

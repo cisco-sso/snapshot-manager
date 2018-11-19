@@ -120,8 +120,9 @@ func (v *validator) validation(run *vs.ValidationRun) error {
 		if err != nil {
 			return e("getting PV %v for PVC %v and run %v", err, pvc.Spec.VolumeName, claim, run)
 		}
-		if pv.Spec.Cinder == nil {
-			return fmt.Errorf("PV not cinder %v for PVC %v and run %v/%v", pv.Name, pvc.Name, run.Namespace, run.Name)
+		label, id, err := getId(pv)
+		if err != nil {
+			return fmt.Errorf("failed getting volume id for PV %v, PVC %v and run %v/%v", pv.Name, pvc.Name, run.Namespace, run.Name)
 		}
 		if err = v.kube.LabelSnapshot(s.Metadata.Namespace, s.Metadata.Name, label, id); err != nil {
 			return e("labeling snapshot %v for run %v", err, s, run)

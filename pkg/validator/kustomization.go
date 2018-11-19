@@ -92,16 +92,6 @@ func (v *validator) getClaims(run *vs.ValidationRun) (map[string]*core.Persisten
 	return claims, nil
 }
 
-func kustomizeClaims(claims map[string]*core.PersistentVolumeClaim, strategy *vs.ValidationStrategy) []core.PersistentVolumeClaim {
-	var kustClaims []core.PersistentVolumeClaim
-	for snap, claim := range claims {
-		kustClaim := *claim.DeepCopy()
-		kustClaim.Annotations = map[string]string{"snapshot.alpha.kubernetes.io/snapshot": snap}
-		kustClaims = append(kustClaims, kustClaim)
-	}
-	return kustClaims
-}
-
 func (v *validator) kustomize(strategy *vs.ValidationStrategy, run *vs.ValidationRun) error {
 	yaml, err := v.getYamlObjectMap(strategy)
 	if err != nil {
@@ -121,7 +111,7 @@ func (v *validator) kustomize(strategy *vs.ValidationStrategy, run *vs.Validatio
 	if err != nil {
 		return e("failed to get claims", err)
 	}
-	kustClaims := kustomizeClaims(claims, strategy)
+	kustClaims := strategy.KustomizeClaims(claims)
 	run.Spec.Objects.Claims = kustClaims
 	return nil
 }
