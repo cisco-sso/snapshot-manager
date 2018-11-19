@@ -43,7 +43,7 @@ func (vs ValidationStrategy) KustomizeClaims(claims map[string]*corev1.Persisten
 		if vs.Spec.StsType != nil {
 			nameSplit := strings.Split(kustClaim.Name, "-")
 			id := nameSplit[len(nameSplit)-1]
-			kustClaim.Name = strings.Join([]string{vs.Spec.StsType.Claim, vs.Spec.Kustomization.NamePrefix, vs.Spec.StsType.Name, id}, "-")
+			kustClaim.Name = strings.Join([]string{vs.Spec.StsType.Claim, vs.Spec.Kustomization.NamePrefix + vs.Spec.StsType.Name, id}, "-")
 		}
 		for k, v := range vs.Spec.Kustomization.CommonLabels {
 			kustClaim.Labels[k] = v
