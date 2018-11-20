@@ -38,19 +38,26 @@ func (vs ValidationStrategy) GetKustResources() []ResourceName {
 func (vs ValidationStrategy) KustomizeClaims(claims map[string]*corev1.PersistentVolumeClaim) []corev1.PersistentVolumeClaim {
 	var kustClaims []corev1.PersistentVolumeClaim
 	for snap, claim := range claims {
-		kustClaim := *claim.DeepCopy()
-		kustClaim.Annotations = map[string]string{"snapshot.alpha.kubernetes.io/snapshot": snap}
+		kustClaim := corev1.PersistentVolumeClaim{}
 		if vs.Spec.StsType != nil {
-			nameSplit := strings.Split(kustClaim.Name, "-")
+			nameSplit := strings.Split(claim.Name, "-")
 			id := nameSplit[len(nameSplit)-1]
 			kustClaim.Name = strings.Join([]string{vs.Spec.StsType.Claim, vs.Spec.Kustomization.NamePrefix + vs.Spec.StsType.Name, id}, "-")
 		}
+		kustClaim.Labels = make(map[string]string)
 		for k, v := range vs.Spec.Kustomization.CommonLabels {
 			kustClaim.Labels[k] = v
 		}
+		kustClaim.Annotations = map[string]string{"snapshot.alpha.kubernetes.io/snapshot": snap}
 		for k, v := range vs.Spec.Kustomization.CommonAnnotations {
 			kustClaim.Annotations[k] = v
 		}
+		kustClaim.Namespace = claim.Namespace
+		//TODO: make this customizable
+		storageClassName := "snapshot"
+		kustClaim.Spec.StorageClassName = &storageClassName
+		kustClaim.Spec.AccessModes = claim.Spec.AccessModes
+		kustClaim.Spec.Resources = claim.Spec.Resources
 		kustClaims = append(kustClaims, kustClaim)
 	}
 	return kustClaims

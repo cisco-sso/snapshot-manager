@@ -229,11 +229,6 @@ func (v *validator) createSnapshotPVCs(run *vs.ValidationRun) error {
 		if oldpvc != nil {
 			continue
 		}
-		snapshotName := run.Spec.ClaimsToSnapshots[pvc.Name]
-		if pvc.Annotations == nil {
-			pvc.Annotations = make(map[string]string)
-		}
-		pvc.Annotations["snapshot.alpha.kubernetes.io/snapshot"] = snapshotName
 		pvc.OwnerReferences = []meta.OwnerReference{{
 			UID:                run.UID,
 			APIVersion:         "snapshotvalidator.ciscosso.io/v1alpha1",
