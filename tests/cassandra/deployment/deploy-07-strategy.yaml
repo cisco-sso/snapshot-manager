@@ -4,95 +4,50 @@ metadata:
   name: cassandra
   namespace: snapshots
 spec:
-  selector:
-    matchLabels:
-      app: cassandra 
-  claims:
-    data-cassandra-0:
-      apiVersion: v1
-      kind: PersistentVolumeClaim
-      metadata:
-        name: data-snapshot-cassandra-0
-        namespace: snapshots
-        annotations:
-          snapshot.alpha.kubernetes.io/snapshot: "{{ $data-snapshot-cassandra-0 }}"
-      spec:
-        accessModes:
-        - ReadWriteOnce
-        resources:
-          requests:
-            storage: 50Gi
-        storageClassName: snapshot
-    data-cassandra-1:
-      apiVersion: v1
-      kind: PersistentVolumeClaim
-      metadata:
-        name: data-snapshot-cassandra-1
-        namespace: snapshots
-        annotations:
-          snapshot.alpha.kubernetes.io/snapshot: "{{ $data-snapshot-cassandra-1 }}"
-      spec:
-        accessModes:
-        - ReadWriteOnce
-        resources:
-          requests:
-            storage: 50Gi
-        storageClassName: snapshot
-    data-cassandra-2:
-      apiVersion: v1
-      kind: PersistentVolumeClaim
-      metadata:
-        name: data-snapshot-cassandra-2
-        namespace: snapshots
-        annotations:
-          snapshot.alpha.kubernetes.io/snapshot: "{{ $data-snapshot-cassandra-2 }}"
-      spec:
-        accessModes:
-        - ReadWriteOnce
-        resources:
-          requests:
-            storage: 50Gi
-        storageClassName: snapshot
-    data-cassandra-3:
-      apiVersion: v1
-      kind: PersistentVolumeClaim
-      metadata:
-        name: data-snapshot-cassandra-3
-        namespace: snapshots
-        annotations:
-          snapshot.alpha.kubernetes.io/snapshot: "{{ $data-snapshot-cassandra-3 }}"
-      spec:
-        accessModes:
-        - ReadWriteOnce
-        resources:
-          requests:
-            storage: 50Gi
-        storageClassName: snapshot
-    data-cassandra-4:
-      apiVersion: v1
-      kind: PersistentVolumeClaim
-      metadata:
-        name: data-snapshot-cassandra-4
-        namespace: snapshots
-        annotations:
-          snapshot.alpha.kubernetes.io/snapshot: "{{ $data-snapshot-cassandra-4 }}"
-      spec:
-        accessModes:
-        - ReadWriteOnce
-        resources:
-          requests:
-            storage: 50Gi
-        storageClassName: snapshot
-  keepFinished: 1
-  init:
-    apiVersion: batch/v1
-    kind: Job
-    metadata:
-      name: snapshot-cassandra-init
-      namespace: snapshots
-    spec:
+  statefulSet:
+    name: cassandra
+    claim: data
+  additionalResources:
+  - name: cassandra
+    group: core
+    version: v1
+    kind: Service
+  kustomization:
+    namePrefix: snapshot-
+    commonLabels:
+      app: snapshot-cassandra
+    patches:
+      patch_sts: |
+        apiVersion: apps/v1
+        kind: StatefulSet
+        metadata:
+          name: cassandra
+        spec:
+          serviceName: snapshot-cassandra
+          template:
+            spec:
+              initContainers:
+              - name: fix-cluster-name
+                image: cassandra:3
+                command:
+                - bash
+                - -c
+                - 'ls /var/lib/cassandra/data/system/local-**/* && rm -rf /var/lib/cassandra/data/system/local-**/mc-*-big-Data.db'
+                volumeMounts:
+                - mountPath: /var/lib/cassandra
+                  name: data
+              containers:
+              - name: cassandra
+                env:
+                - name: CASSANDRA_SEEDS
+                  value: snapshot-cassandra-0.snapshot-cassandra.snapshots.svc.cluster.local, snapshot-cassandra-1.snapshot-cassandra.snapshots.svc.cluster.local
+                - name: CASSANDRA_CLUSTER_NAME
+                  value: snapshot-cassandra
+  hooks:
+    init:
       template:
         spec:
+          backoffLimit: 20
           restartPolicy: Never
           containers:
           - name: cassandra 
@@ -105,13 +60,7 @@ spec:
               cqlsh snapshot-cassandra -e \"CREATE KEYSPACE IF NOT EXISTS snapshot_helper WITH REPLICATION = {'class':'SimpleStrategy', 'replication_factor':1}\" ;
               cqlsh snapshot-cassandra -e \"CREATE TABLE IF NOT EXISTS snapshot_helper.index_table ( id UUID PRIMARY KEY, count counter );\" ;
               echo initialized"]
-  preValidation:
-    apiVersion: batch/v1
-    kind: Job
-    metadata:
-      name: snapshot-cassandra-prevalidation
-      namespace: snapshots
-    spec:
+    preValidation:
       template:
         spec:
           restartPolicy: Never
@@ -124,13 +73,7 @@ spec:
             command: [ "bash", "-c", "set -x; set -e;
               cqlsh cassandra -e 'UPDATE snapshot_helper.index_table SET count = count + 1 WHERE id = 6ab09bec-e68e-48d9-a5f8-97e6fb4c9b47' ;
               echo updated"]
-  validation:
-    apiVersion: batch/v1
-    kind: Job
-    metadata:
-      name: snapshot-cassandra-validation
-      namespace: snapshots
-    spec:
+    validation:
       template:
         spec:
           restartPolicy: Never
@@ -149,115 +92,3 @@ spec:
               TEST_O=$(cqlsh cassandra -e 'SELECT count FROM test.test_table WHERE id = aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa' | awk 'NR==4{print($1)}') ;
               TEST_S=$(cqlsh snapshot-cassandra -e 'SELECT count FROM test.test_table WHERE id = aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa' | awk 'NR==4{print($1)}') ;
               if [[ $TEST_O != $TEST_S ]]; then echo failed test; exit 1; else echo success test; fi ; "]
-  service:
-    apiVersion: v1
-    kind: Service
-    metadata:
-      labels:
-        app: snapshot-cassandra
-      name: snapshot-cassandra
-      namespace: snapshots
-    spec:
-      clusterIP: None
-      ports:
-      - name: intra
-        port: 7500
-        protocol: TCP
-        targetPort: 7000
-      - name: tls
-        port: 7501
-        protocol: TCP
-        targetPort: 7001
-      - name: jmx
-        port: 7699
-        protocol: TCP
-        targetPort: 7199
-      - name: cql
-        port: 9542
-        protocol: TCP
-        targetPort: 9042
-      - name: thrift
-        port: 9660
-        protocol: TCP
-        targetPort: 9160
-      selector:
-        app: snapshot-cassandra
-      sessionAffinity: None
-      type: ClusterIP
-    status:
-      loadBalancer: {}
-  #pauseSts:
-    #cassandra
-  statefulSet:
-    apiVersion: apps/v1
-    kind: StatefulSet
-    metadata:
-      labels:
-        app: snapshot-cassandra
-      name: snapshot-cassandra
-      namespace: snapshots
-    spec:
-      podManagementPolicy: Parallel
-      replicas: 5
-      revisionHistoryLimit: 10
-      selector:
-        matchLabels:
-          app: snapshot-cassandra
-      serviceName: snapshot-cassandra
-      template:
-        metadata:
-          creationTimestamp: null
-          labels:
-            app: snapshot-cassandra
-        spec:
-          containers:
-          - env:
-            - name: JVM_EXTRA_OPTS
-              value: -Dcassandra.jmx.local.port=7199 -Dcom.sun.management.jmxremote -Dcom.sun.management.jmxremote.authenticate=false -Dcom.sun.management.jmxremote.local.only=false -Dcom.sun.management.jmxremote.port=7199 -Dcom.sun.management.jmxremote.rmi.port=7199 -Dcom.sun.management.jmxremote.ssl=false -Djava.rmi.server.hostname=127.0.0.1 
-            - name: CASSANDRA_SEEDS
-              value: snapshot-cassandra-0.snapshot-cassandra.snapshots.svc.cluster.local,snapshot-cassandra-1.snapshot-cassandra.snapshots.svc.cluster.local
-            - name: MAX_HEAP_SIZE
-              value: 2048M
-            - name: HEAP_NEWSIZE
-              value: 200M
-            - name: CASSANDRA_ENDPOINT_SNITCH
-              value: SimpleSnitch
-            - name: CASSANDRA_CLUSTER_NAME
-              value: snapshot-cassandra
-            - name: CASSANDRA_DC
-              value: DC1
-            - name: CASSANDRA_RACK
-              value: RAC1
-            - name: CASSANDRA_START_RPC
-              value: "false"
-            - name: LOCAL_JMX
-              value: "no"
-            - name: POD_IP
-              valueFrom:
-                fieldRef:
-                  apiVersion: v1
-                  fieldPath: status.podIP
-            name: cassandra
-            image: containers.cisco.com/jawoznia/snapshot-cassandra:latest
-            imagePullPolicy: Always 
-            volumeMounts:
-            - mountPath: /var/lib/cassandra
-              name: data
-          dnsPolicy: ClusterFirst
-          restartPolicy: Always
-          schedulerName: default-scheduler
-          securityContext: {}
-          terminationGracePeriodSeconds: 30
-      updateStrategy:
-        type: OnDelete
-      volumeClaimTemplates:
-      - metadata:
-          labels:
-            app: snapshot-cassandra
-          name: data
-        spec:
-          accessModes:
-          - ReadWriteOnce
-          resources:
-            requests:
-              storage: 50Gi
