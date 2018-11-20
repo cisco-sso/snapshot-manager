@@ -82,7 +82,7 @@ func (c *controller) GetObjectYAML(namespace string, r vs.ResourceName) (string,
 	//TODO: do this intelligently without calling kubectl binary
 	//maybe k8s.io/client-go/rest/config.go
 	//or look at how kubectl does this
-	cmd := exec.Command("kubectl", "get", "-o", "yaml", "-ns", namespace, r.Kind, r.Name)
+	cmd := exec.Command("kubectl", "get", "-o", "yaml", "-n", namespace, r.Kind, r.Name)
 	stdout := bytes.NewBufferString("")
 	cmd.Stdout = stdout
 	stderr := bytes.NewBufferString("")
