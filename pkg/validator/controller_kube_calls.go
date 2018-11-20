@@ -194,6 +194,9 @@ func (c *controller) ListPVCs(selector labels.Selector) ([]*core.PersistentVolum
 }
 
 func (c *controller) ListStrategies() ([]*vs.ValidationStrategy, error) {
+	if err := c.vsInformer.GetStore().Resync(); err != nil {
+		return nil, e("Failed to resync vsInformer store", err)
+	}
 	return c.vsLister.List(labels.Everything())
 }
 
