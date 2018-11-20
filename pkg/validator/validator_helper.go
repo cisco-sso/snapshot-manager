@@ -254,7 +254,7 @@ func (v *validator) createSnapshotPVCs(run *vs.ValidationRun) error {
 }
 
 func (v *validator) createJob(name string, jobSpec *batch.JobSpec, run *vs.ValidationRun) error {
-	name = run.Name + name
+	name = name + "-" + run.Name
 	if jobSpec != nil {
 		oldjob, _ := v.kube.GetJob(run.Namespace, name)
 		if oldjob != nil {
