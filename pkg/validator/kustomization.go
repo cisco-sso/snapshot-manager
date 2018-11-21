@@ -11,6 +11,7 @@ import (
 	kustfs "sigs.k8s.io/kustomize/pkg/fs"
 	"sigs.k8s.io/kustomize/pkg/patch"
 	kust "sigs.k8s.io/kustomize/pkg/types"
+	"strings"
 	//"sigs.k8s.io/kustomize/k8sdeps/kunstruct"
 	//"sigs.k8s.io/kustomize/pkg/ifc/transformer"
 	//"sigs.k8s.io/kustomize/pkg/resmap"
@@ -106,7 +107,8 @@ func (v *validator) kustomize(strategy *vs.ValidationStrategy, run *vs.Validatio
 	if err = runKustomizeBuild(root, out, fs); err != nil {
 		return e("failed to run kustomize", err)
 	}
-	run.Spec.Objects.Kustomized = append(run.Spec.Objects.Kustomized, out.String())
+	outObjects := strings.Split(out.String(), "---")
+	run.Spec.Objects.Kustomized = append(run.Spec.Objects.Kustomized, outObjects...)
 	claims, err := v.getClaims(run)
 	if err != nil {
 		return e("failed to get claims", err)

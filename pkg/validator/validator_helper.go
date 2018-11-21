@@ -377,7 +377,6 @@ func (v *validator) createObjects(run *vs.ValidationRun) error {
 		}})
 		if json, err := u.MarshalJSON(); err != nil {
 			errors = append(errors, e("Marshal json %d. %v", err, i, u).Error())
-			continue
 		} else {
 			if err := v.kube.CreateObjectYAML(string(json)); err != nil {
 				errors = append(errors, e("Create object from YAML %d. %v", err, i, string(json)).Error())
