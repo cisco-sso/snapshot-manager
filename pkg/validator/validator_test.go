@@ -68,8 +68,13 @@ func (c *basicClient) GetService(string, string) (*core.Service, error) {
 func (c *basicClient) CreateObjectYAML(string) error {
 	return nil
 }
-func (c *basicClient) GetObjectYAML(string, vs.ResourceName) (string, error) {
-	return "", nil
+func (c *basicClient) GetObjectYAML(ns string, r vs.ResourceName) (string, error) {
+	yaml := "kind: " + r.Kind + "\n" +
+		"apiVersion: " + r.Version + "\n" +
+		"metadata:\n" +
+		"  name: " + r.Name + "\n" +
+		"  namespace: " + ns + "\n"
+	return yaml, nil
 }
 func (c *basicClient) SetStsReplica(string, string, int) error {
 	return fmt.Errorf("not implemented")

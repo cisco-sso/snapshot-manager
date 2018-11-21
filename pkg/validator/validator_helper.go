@@ -3,12 +3,14 @@ package validator
 import (
 	"fmt"
 	vs "github.com/cisco-sso/snapshot-validator/pkg/apis/snapshotvalidator/v1alpha1"
+	"github.com/ghodss/yaml"
 	"github.com/golang/glog"
 	snap "github.com/kubernetes-incubator/external-storage/snapshot/pkg/apis/crd/v1"
 	apps "k8s.io/api/apps/v1"
 	batch "k8s.io/api/batch/v1"
 	core "k8s.io/api/core/v1"
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
+	unstructured "k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -361,15 +363,32 @@ func getId(pv *core.PersistentVolume) (string, string, error) {
 	return "unknown", "unknown", fmt.Errorf("TODO: implement getId for other than cinder source")
 }
 
-func (v *validator) createObjects(obj []string) error {
+func (v *validator) createObjects(run *vs.ValidationRun) error {
 	var errors []string
-	for _, o := range obj {
-		if err := v.kube.CreateObjectYAML(o); err != nil {
-			errors = append(errors, err.Error())
+	for i, o := range run.Spec.Objects.Kustomized {
+		u := unstructured.Unstructured{}
+		if err := yaml.Unmarshal([]byte(o), &u); err != nil {
+			errors = append(errors, e("Unmarshal yaml %d. %v", err, i, o).Error())
+			continue
+		}
+		u.SetOwnerReferences([]meta.OwnerReference{{
+			UID:                run.UID,
+			APIVersion:         "snapshotvalidator.ciscosso.io/v1alpha1",
+			Kind:               "ValidationRun",
+			Name:               run.Name,
+			BlockOwnerDeletion: &block,
+		}})
+		if json, err := u.MarshalJSON(); err != nil {
+			errors = append(errors, e("Marshal json %d. %v", err, i, u).Error())
+			continue
+		} else {
+			if err := v.kube.CreateObjectYAML(string(json)); err != nil {
+				errors = append(errors, e("Create object from YAML %d. %v", err, i, string(json)).Error())
+			}
 		}
 	}
 	if len(errors) != 0 {
-		return fmt.Errorf("Unable to create objects %v", strings.Join(errors, ", "))
+		return fmt.Errorf("Unable to create objects [%v]", strings.Join(errors, ", "))
 	}
 	return nil
 }

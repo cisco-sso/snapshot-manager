@@ -60,7 +60,7 @@ func (v *validator) init(run *vs.ValidationRun) error {
 		return e("failed to create snapshot PVCs", err)
 	}
 	glog.V(4).Infof("create snapshot objects for run %v/%v", run.Namespace, run.Name)
-	if err = v.createObjects(run.Spec.Objects.Kustomized); err != nil {
+	if err = v.createObjects(run); err != nil {
 		return e("failed to create kustomized objects", err)
 	}
 	glog.V(4).Infof("create snapshot init job for run %v/%v", run.Namespace, run.Name)
