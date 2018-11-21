@@ -33,14 +33,32 @@ func NewValidator(kube KubeCalls) Validator {
 	}
 }
 
-func (v *validator) beforeInit(run *vs.ValidationRun) error {
-	glog.V(2).Infof("before init run %v/%v", run.Namespace, run.Name)
-	//TODO: validate the snapshots still exist
+func (v *validator) beforeKust(run *vs.ValidationRun) error {
+	glog.V(2).Infof("before kust run %v/%v", run.Namespace, run.Name)
 	for k, v := range run.Spec.ClaimsToSnapshots {
 		if v == "" {
 			return fmt.Errorf("claim %v is missing snapshot", k)
 		}
 	}
+	run.Status.KustStarted = &meta.Time{time.Now()}
+	return v.kube.UpdateValidationRun(run)
+}
+
+func (v *validator) kust(run *vs.ValidationRun) error {
+	glog.V(2).Infof("kustomize run %v/%v", run.Namespace, run.Name)
+	strategy, err := v.getStrategy(run)
+	if err != nil {
+		return e("failed getting strategy", err)
+	}
+	if err = v.kustomize(strategy, run); err != nil {
+		return e("failed kustomize", err)
+	}
+	run.Status.KustFinished = &meta.Time{time.Now()}
+	return v.kube.UpdateValidationRun(run)
+}
+
+func (v *validator) beforeInit(run *vs.ValidationRun) error {
+	glog.V(2).Infof("before init run %v/%v", run.Namespace, run.Name)
 	run.Status.InitStarted = &meta.Time{time.Now()}
 	return v.kube.UpdateValidationRun(run)
 }
@@ -50,10 +68,6 @@ func (v *validator) init(run *vs.ValidationRun) error {
 	strategy, err := v.getStrategy(run)
 	if err != nil {
 		return e("failed getting strategy", err)
-	}
-	glog.V(4).Infof("kustomize run %v/%v", run.Namespace, run.Name)
-	if err = v.kustomize(strategy, run); err != nil {
-		return e("failed kustomize", err)
 	}
 	glog.V(4).Infof("create snapshot PVCs for run %v/%v", run.Namespace, run.Name)
 	if err = v.createSnapshotPVCs(run); err != nil {
@@ -158,9 +172,12 @@ func (v *validator) ProcessValidationRun(run *vs.ValidationRun) (err error) {
 	//v.mutex.Lock()
 	//defer v.mutex.Unlock()
 
-	//TODO: do deep copy only when necessary
 	copy := run.DeepCopy()
-	if run.Status.InitStarted == nil {
+	if run.Status.KustStarted == nil {
+		err = v.beforeKust(copy)
+	} else if run.Status.KustFinished == nil {
+		err = v.kust(copy)
+	} else if run.Status.InitStarted == nil {
 		err = v.beforeInit(copy)
 	} else if run.Status.InitFinished == nil {
 		err = v.init(copy)

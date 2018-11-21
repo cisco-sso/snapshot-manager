@@ -161,6 +161,8 @@ type ValidationRunObjects struct {
 
 // ValidationRunStatus
 type ValidationRunStatus struct {
+	KustStarted           *metav1.Time `json:"kustStarted,omitempty"`
+	KustFinished          *metav1.Time `json:"kustFinished,omitempty"`
 	InitStarted           *metav1.Time `json:"initStarted,omitempty"`
 	InitFinished          *metav1.Time `json:"initFinished,omitempty"`
 	PreValidationStarted  *metav1.Time `json:"preValidationStarted,omitempty"`

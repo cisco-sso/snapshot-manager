@@ -123,9 +123,6 @@ func (v *validator) matchRun(strategy *vs.ValidationStrategy) (*vs.ValidationRun
 	glog.V(4).Infof("matching run for strategy %v/%v, from %v runs", strategy.Namespace, strategy.Name, len(runs))
 	//TODO: sort runs by time
 	for _, r := range runs {
-		if r.Status.InitStarted != nil {
-			continue
-		}
 		for _, ref := range r.OwnerReferences {
 			if ref.UID == strategy.UID {
 				return r.DeepCopy(), nil
