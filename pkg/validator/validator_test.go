@@ -114,6 +114,7 @@ func (c *basicClient) ListPVCs(selector labels.Selector) ([]*core.PersistentVolu
 func (c *basicClient) ListStrategies() ([]*vs.ValidationStrategy, error) {
 	strategy := vs.ValidationStrategy{
 		Spec: vs.ValidationStrategySpec{
+			AutoTrigger: true,
 			StsType: &vs.StatefulSetType{
 				Name:  "test",
 				Claim: "data",

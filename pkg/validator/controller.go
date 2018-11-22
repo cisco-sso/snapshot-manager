@@ -52,15 +52,13 @@ type controller struct {
 	vrInformer      kcache.SharedIndexInformer
 	vrLister        vslister.ValidationRunLister
 
-	//snapshotWorkqueue      workqueue.RateLimitingInterface
-	//validationRunWorkqueue workqueue.RateLimitingInterface
-	snapshotWorkqueue      workqueue.Interface
-	validationRunWorkqueue workqueue.Interface
+	snapshotWorkqueue      workqueue.RateLimitingInterface
+	validationRunWorkqueue workqueue.RateLimitingInterface
 	validator              Validator
 }
 
 func NewController(clients Clients, stopCh <-chan struct{}) *controller {
-	syncTime := time.Second * 30
+	syncTime := time.Hour
 
 	kfac := kubeinformers.NewSharedInformerFactory(clients.KubeClientset, syncTime)
 	svfac := svinformers.NewSharedInformerFactory(clients.SvClientset, syncTime)
@@ -84,8 +82,8 @@ func NewController(clients Clients, stopCh <-chan struct{}) *controller {
 		vrInformer:      svfac.Snapshotvalidator().V1alpha1().ValidationRuns().Informer(),
 		vrLister:        svfac.Snapshotvalidator().V1alpha1().ValidationRuns().Lister(),
 
-		snapshotWorkqueue:      workqueue.NewNamed("VolumeSnapshots"),
-		validationRunWorkqueue: workqueue.NewNamed("ValidatorRun"),
+		snapshotWorkqueue:      workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "VolumeSnapshots"),
+		validationRunWorkqueue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "ValidatorRun"),
 	}
 
 	c.validator = NewValidator(c)
@@ -108,6 +106,7 @@ func NewController(clients Clients, stopCh <-chan struct{}) *controller {
 	c.vrInformer.AddEventHandler(kcache.ResourceEventHandlerFuncs{
 		AddFunc:    c.enqueueValidatorRun,
 		UpdateFunc: func(old, new interface{}) { c.enqueueValidatorRun(new) },
+		DeleteFunc: c.scheduleValidatorRunDelete,
 	})
 
 	go kfac.Start(stopCh)
@@ -127,9 +126,26 @@ func (c *controller) enqueueValidatorRun(obj interface{}) {
 		runtime.HandleError(err)
 		return
 	} else {
-		//c.validationRunWorkqueue.AddRateLimited(key)
 		c.validationRunWorkqueue.Add(key)
 	}
+}
+
+func (c *controller) scheduleValidatorRunDelete(obj interface{}) {
+	var run *vs.ValidationRun
+	var ok bool
+	if run, ok = obj.(*vs.ValidationRun); !ok {
+		tombstone, ok := obj.(kcache.DeletedFinalStateUnknown)
+		if !ok {
+			glog.Errorf("decoding run, invalid type")
+			return
+		}
+		if run, ok = tombstone.Obj.(*vs.ValidationRun); !ok {
+			glog.Errorf("decoding run tombstone, invalid type")
+			return
+		}
+		glog.V(4).Infof("Recovered deleted run '%s' from tombstone", run.GetName())
+	}
+	c.validator.ProcessValidationRunDelete(run)
 }
 
 func (c *controller) enqueueSnapshot(obj interface{}) {
@@ -144,7 +160,6 @@ func (c *controller) enqueueSnapshot(obj interface{}) {
 		runtime.HandleError(err)
 		return
 	} else {
-		//c.snapshotWorkqueue.AddRateLimited(key)
 		c.snapshotWorkqueue.Add(key)
 	}
 }
@@ -198,20 +213,24 @@ func (c *controller) processNextValidation() (bool, error) {
 	defer c.validationRunWorkqueue.Done(obj)
 	key, ok := obj.(string)
 	if !ok {
+		c.validationRunWorkqueue.Forget(obj)
 		return false, fmt.Errorf("expected string in validation workqueue but got %#v", obj)
 	}
 	obj, ok, err := c.vrInformer.GetStore().GetByKey(key)
 	if !ok || err != nil {
+		c.validationRunWorkqueue.Forget(obj)
 		return false, fmt.Errorf("key %v not found in store", key)
 	}
 	validationRun, ok := obj.(*vs.ValidationRun)
 	if !ok {
+		c.validationRunWorkqueue.Forget(obj)
 		return false, fmt.Errorf("expected type ValidationRun for key %v but received type %T", key, obj)
 	}
 	if err := c.validator.ProcessValidationRun(validationRun); err != nil {
-		defer c.validationRunWorkqueue.Add(key)
+		c.validationRunWorkqueue.AddRateLimited(key)
 		return false, fmt.Errorf("processing validationRun %v failed: %v", key, err)
 	}
+	c.validationRunWorkqueue.Forget(key)
 	glog.Infof("Successfully synced '%s'", key)
 	return false, nil
 }
@@ -224,18 +243,21 @@ func (c *controller) processNextSnapshot() (bool, error) {
 	defer c.snapshotWorkqueue.Done(obj)
 	key, ok := obj.(string)
 	if !ok {
+		c.snapshotWorkqueue.Forget(obj)
 		return false, fmt.Errorf("expected string in workqueue but got %#v", obj)
 	}
 	obj, ok, err := c.snapshotStore.GetByKey(key)
 	if !ok || err != nil {
+		c.snapshotWorkqueue.Forget(obj)
 		return false, fmt.Errorf("key %v not found in store", key)
 	}
 	snapshot, ok := obj.(*snap.VolumeSnapshot)
 	if !ok {
+		c.snapshotWorkqueue.Forget(obj)
 		return false, fmt.Errorf("expected type VolumeSnapshot for key %v but received type %T", key, obj)
 	}
 	if err := c.validator.ProcessSnapshot(snapshot); err != nil {
-		defer c.snapshotWorkqueue.Add(key)
+		c.snapshotWorkqueue.AddRateLimited(key)
 		return false, fmt.Errorf("processing VolumeSnapshot %v failed: %v", key, err)
 	}
 

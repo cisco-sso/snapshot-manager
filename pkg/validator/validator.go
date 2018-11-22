@@ -18,18 +18,19 @@ var (
 
 type validator struct {
 	kube  KubeCalls
-	mutex map[string]*sync.Mutex
+	mutex sync.Map
 }
 
 type Validator interface {
 	ProcessSnapshot(snapshot *snap.VolumeSnapshot) error
 	ProcessValidationRun(run *vs.ValidationRun) error
+	ProcessValidationRunDelete(run *vs.ValidationRun)
 }
 
 func NewValidator(kube KubeCalls) Validator {
 	return &validator{
 		kube,
-		make(map[string]*sync.Mutex),
+		sync.Map{},
 	}
 }
 
@@ -46,7 +47,7 @@ func (v *validator) beforeKust(run *vs.ValidationRun) error {
 
 func (v *validator) kust(run *vs.ValidationRun) error {
 	glog.V(2).Infof("kustomize run %v/%v", run.Namespace, run.Name)
-	strategy, err := v.getStrategy(run)
+	strategy, err := v.getStrategyForRun(run)
 	if err != nil {
 		return e("failed getting strategy", err)
 	}
@@ -65,7 +66,7 @@ func (v *validator) beforeInit(run *vs.ValidationRun) error {
 
 func (v *validator) init(run *vs.ValidationRun) error {
 	glog.V(2).Infof("init run %v/%v", run.Namespace, run.Name)
-	strategy, err := v.getStrategy(run)
+	strategy, err := v.getStrategyForRun(run)
 	if err != nil {
 		return e("failed getting strategy", err)
 	}
@@ -93,7 +94,7 @@ func (v *validator) beforePreValidation(run *vs.ValidationRun) error {
 
 func (v *validator) preValidation(run *vs.ValidationRun) error {
 	glog.V(2).Infof("pre-validation run %v/%v", run.Namespace, run.Name)
-	strategy, err := v.getStrategy(run)
+	strategy, err := v.getStrategyForRun(run)
 	if err != nil {
 		return err
 	}
@@ -113,7 +114,7 @@ func (v *validator) beforeValidation(run *vs.ValidationRun) error {
 
 func (v *validator) validation(run *vs.ValidationRun) error {
 	glog.V(2).Infof("validation run %v/%v", run.Namespace, run.Name)
-	strategy, err := v.getStrategy(run)
+	strategy, err := v.getStrategyForRun(run)
 	if err != nil {
 		return e("getting strategy for run %v", err, run)
 	}
@@ -169,11 +170,10 @@ func (v *validator) cleanup(run *vs.ValidationRun) error {
 func (v *validator) ProcessValidationRun(run *vs.ValidationRun) (err error) {
 	glog.Infof("processing validation run %v/%v", run.Namespace, run.Name)
 	mutexId := run.Namespace + "/" + run.Name
-	if v.mutex[mutexId] == nil {
-		v.mutex[mutexId] = &sync.Mutex{}
-	}
-	v.mutex[mutexId].Lock()
-	defer v.mutex[mutexId].Unlock()
+	m, _ := v.mutex.LoadOrStore(mutexId, &sync.Mutex{})
+	mutex, _ := m.(*sync.Mutex)
+	mutex.Lock()
+	defer mutex.Unlock()
 
 	copy := run.DeepCopy()
 	if run.Status.KustStarted == nil {
@@ -206,9 +206,27 @@ func (v *validator) ProcessValidationRun(run *vs.ValidationRun) (err error) {
 	return
 }
 
+func (v *validator) ProcessValidationRunDelete(run *vs.ValidationRun) {
+	go func() {
+		//delayed delete
+		time.Sleep(time.Minute)
+		mutexId := run.Namespace + "/" + run.Name
+		v.mutex.Delete(mutexId)
+	}()
+}
+
 func (v *validator) ProcessSnapshot(snapshot *snap.VolumeSnapshot) error {
 	glog.Infof("processing snapshot %v/%v", snapshot.Metadata.Namespace, snapshot.Metadata.Name)
-	run, strategy, new, err := v.getRun(snapshot)
+	strategy, err := v.getStrategyForSnapshot(snapshot)
+	if err != nil {
+		return e("processing snapshot %v failed getting strategy", err, snapshot)
+	}
+	mutexId := strategy.Namespace + "/" + strategy.Name
+	m, _ := v.mutex.LoadOrStore(mutexId, &sync.Mutex{})
+	mutex, _ := m.(*sync.Mutex)
+	mutex.Lock()
+	defer mutex.Unlock()
+	run, new, err := v.getRunForStrategy(strategy)
 	if run != nil {
 		glog.V(4).Infof("got run %v/%v for snapshot %v/%v, new(%v)", run.Namespace, run.Name, snapshot.Metadata.Namespace, snapshot.Metadata.Name, new)
 	} else {
@@ -221,12 +239,6 @@ func (v *validator) ProcessSnapshot(snapshot *snap.VolumeSnapshot) error {
 		glog.Infof("finished processing snapshot %v/%v successfully without autotrigger", snapshot.Metadata.Namespace, snapshot.Metadata.Name)
 		return nil
 	}
-	mutexId := strategy.Namespace + "/" + strategy.Name
-	if v.mutex[mutexId] == nil {
-		v.mutex[mutexId] = &sync.Mutex{}
-	}
-	v.mutex[mutexId].Lock()
-	defer v.mutex[mutexId].Unlock()
 	err = v.updateRun(run, snapshot, new)
 	if err != nil {
 		return e("processing snapshot %v failed updating run", err, snapshot)

@@ -95,24 +95,6 @@ func (v *validator) getLabelSelector(strategy *vs.ValidationStrategy) (labels.Se
 	return nil, fmt.Errorf("unknown strategy type")
 }
 
-func (v *validator) matchStrategy(pod *core.Pod) (*vs.ValidationStrategy, error) {
-	strategies, err := v.kube.ListStrategies()
-	if err != nil {
-		return nil, err
-	}
-	for _, s := range strategies {
-		selector, err := v.getLabelSelector(s)
-		if err != nil {
-			glog.Errorf(err.Error())
-			continue
-		}
-		if selector.Matches(labels.Set(pod.Labels)) {
-			return s, nil
-		}
-	}
-	return nil, fmt.Errorf("Strategy for pod %v/%v not found", pod.Namespace, pod.Name)
-}
-
 func (v *validator) matchRun(strategy *vs.ValidationStrategy) (*vs.ValidationRun, error) {
 	//TODO: implement as InformerIndexer
 	runs, err := v.kube.ListRuns()
@@ -180,31 +162,45 @@ func (v *validator) initRun(strategy *vs.ValidationStrategy) (*vs.ValidationRun,
 	return run, nil
 }
 
-func (v *validator) getRun(snapshot *snap.VolumeSnapshot) (*vs.ValidationRun, *vs.ValidationStrategy, bool, error) {
+func (v *validator) getStrategyForSnapshot(snapshot *snap.VolumeSnapshot) (*vs.ValidationStrategy, error) {
 	pod, err := v.findPod(snapshot)
+	if err != nil {
+		return nil, err
+	}
+	strategies, err := v.kube.ListStrategies()
+	if err != nil {
+		return nil, err
+	}
+	for _, s := range strategies {
+		selector, err := v.getLabelSelector(s)
+		if err != nil {
+			glog.Errorf(err.Error())
+			continue
+		}
+		if selector.Matches(labels.Set(pod.Labels)) {
+			return s, nil
+		}
+	}
+	return nil, fmt.Errorf("Strategy for pod %v/%v not found", pod.Namespace, pod.Name)
+}
+
+func (v *validator) getRunForStrategy(strategy *vs.ValidationStrategy) (*vs.ValidationRun, bool, error) {
 	new, failed := true, false
-	if err != nil {
-		return nil, nil, failed, err
-	}
-	strategy, err := v.matchStrategy(pod)
-	if err != nil {
-		return nil, nil, failed, err
-	}
 	run, err := v.matchRun(strategy)
 	if err != nil {
-		return nil, nil, failed, err
+		return nil, failed, err
 	}
 	if run == nil {
 		run, err = v.initRun(strategy)
 		if err != nil {
-			return nil, nil, failed, err
+			return nil, failed, err
 		}
-		return run, strategy, new, nil
+		return run, new, nil
 	}
-	return run, strategy, !new, nil
+	return run, !new, nil
 }
 
-func (v *validator) getStrategy(run *vs.ValidationRun) (*vs.ValidationStrategy, error) {
+func (v *validator) getStrategyForRun(run *vs.ValidationRun) (*vs.ValidationStrategy, error) {
 	strategies, err := v.kube.ListStrategies()
 	if err != nil {
 		return nil, err
@@ -253,22 +249,23 @@ func (v *validator) createJob(name string, jobSpec *batch.JobSpec, run *vs.Valid
 	name = name + "-" + run.Name
 	if jobSpec != nil {
 		oldjob, _ := v.kube.GetJob(run.Namespace, name)
+		var job batch.Job
 		if oldjob != nil {
-			return nil
-		}
-		job := batch.Job{}
-		job.OwnerReferences = []meta.OwnerReference{{
-			UID:                run.UID,
-			APIVersion:         "snapshotvalidator.ciscosso.io/v1alpha1",
-			Kind:               "ValidationRun",
-			Name:               run.Name,
-			BlockOwnerDeletion: &block,
-		}}
-		job.Name = name
-		job.Namespace = run.Namespace
-		job.Spec = *jobSpec
-		if err := v.kube.CreateJob(&job); err != nil {
-			return e("creating job %v", err, job)
+			job = *oldjob
+		} else {
+			job.OwnerReferences = []meta.OwnerReference{{
+				UID:                run.UID,
+				APIVersion:         "snapshotvalidator.ciscosso.io/v1alpha1",
+				Kind:               "ValidationRun",
+				Name:               run.Name,
+				BlockOwnerDeletion: &block,
+			}}
+			job.Name = name
+			job.Namespace = run.Namespace
+			job.Spec = *jobSpec
+			if err := v.kube.CreateJob(&job); err != nil {
+				return e("creating job %v", err, job)
+			}
 		}
 		if err := wait.PollImmediate(10*time.Second, 10*time.Minute, func() (bool, error) {
 			current, err := v.kube.GetJob(job.Namespace, job.Name)
