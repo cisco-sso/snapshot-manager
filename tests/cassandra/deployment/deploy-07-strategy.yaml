@@ -4,9 +4,11 @@ metadata:
   name: cassandra
   namespace: snapshots
 spec:
+  autoTrigger: true
   statefulSet:
     name: cassandra
     claim: data
+    snapshotClaimStorageClass: snapshot
   additionalResources:
   - name: cassandra
     group: core
@@ -47,9 +49,9 @@ spec:
                   value: -Dcassandra.consistent.rangemovement=false
   hooks:
     init:
+      backoffLimit: 20
       template:
         spec:
-          backoffLimit: 20
           restartPolicy: Never
           containers:
           - name: cassandra 
@@ -63,10 +65,10 @@ spec:
               cqlsh snapshot-cassandra -e \"CREATE TABLE IF NOT EXISTS snapshot_helper.index_table ( id UUID PRIMARY KEY, count counter );\" ;
               echo initialized"]
     preValidation:
+      backoffLimit: 0
       template:
         spec:
           restartPolicy: Never
-          backoffLimit: 0
           containers:
           - name: cassandra 
             image: cassandra:3

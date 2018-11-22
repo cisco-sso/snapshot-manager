@@ -43,6 +43,7 @@ func (vs ValidationStrategy) KustomizeClaims(claims map[string]*corev1.Persisten
 			nameSplit := strings.Split(claim.Name, "-")
 			id := nameSplit[len(nameSplit)-1]
 			kustClaim.Name = strings.Join([]string{vs.Spec.StsType.Claim, vs.Spec.Kustomization.NamePrefix + vs.Spec.StsType.Name, id}, "-")
+			kustClaim.Spec.StorageClassName = vs.Spec.StsType.SnapshotClaimStorageClass
 		}
 		kustClaim.Labels = make(map[string]string)
 		for k, v := range vs.Spec.Kustomization.CommonLabels {
@@ -53,9 +54,6 @@ func (vs ValidationStrategy) KustomizeClaims(claims map[string]*corev1.Persisten
 			kustClaim.Annotations[k] = v
 		}
 		kustClaim.Namespace = claim.Namespace
-		//TODO: make this customizable
-		storageClassName := "snapshot"
-		kustClaim.Spec.StorageClassName = &storageClassName
 		kustClaim.Spec.AccessModes = claim.Spec.AccessModes
 		kustClaim.Spec.Resources = claim.Spec.Resources
 		kustClaims = append(kustClaims, kustClaim)
@@ -70,7 +68,7 @@ type ValidationStrategySpec struct {
 	AdditionalResources []ResourceName `json:"additionalResources"`
 	Kustomization       Kustomization  `json:"kustomization"`
 	Hooks               *Hooks         `json:"hooks,omitempty"`
-	KeepFinished        int            `json:"keepFinished"`
+	AutoTrigger         bool           `json:"autoTrigger"`
 }
 
 // Hooks
@@ -82,8 +80,9 @@ type Hooks struct {
 
 // StetfulSetStrategy
 type StatefulSetType struct {
-	Name  string `json:"name"`
-	Claim string `json:"claim"`
+	Name                      string  `json:"name"`
+	Claim                     string  `json:"claim"`
+	SnapshotClaimStorageClass *string `json:"snapshotClaimStorageClass,omitempty"`
 }
 
 // Kustomization

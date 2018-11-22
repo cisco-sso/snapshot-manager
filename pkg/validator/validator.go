@@ -217,6 +217,10 @@ func (v *validator) ProcessSnapshot(snapshot *snap.VolumeSnapshot) error {
 	if err != nil {
 		return e("processing snapshot %v failed getting run", err, snapshot)
 	}
+	if !strategy.Spec.AutoTrigger {
+		glog.Infof("finished processing snapshot %v/%v successfully without autotrigger", snapshot.Metadata.Namespace, snapshot.Metadata.Name)
+		return nil
+	}
 	mutexId := strategy.Namespace + "/" + strategy.Name
 	if v.mutex[mutexId] == nil {
 		v.mutex[mutexId] = &sync.Mutex{}
