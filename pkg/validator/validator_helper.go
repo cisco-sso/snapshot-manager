@@ -368,6 +368,17 @@ func (v *validator) createObjects(run *vs.ValidationRun) error {
 			errors = append(errors, e("Unmarshal yaml %d. %v", err, i, o).Error())
 			continue
 		}
+		r := vs.ResourceName{
+			Group:   u.GroupVersionKind().Group,
+			Kind:    u.GetKind(),
+			Version: u.GetAPIVersion(),
+			Name:    u.GetName(),
+		}
+		oldObject, _ := v.kube.GetObjectYAML(u.GetNamespace(), r)
+		if oldObject != "" {
+			//skip already existing
+			continue
+		}
 		u.SetOwnerReferences([]meta.OwnerReference{{
 			UID:                run.UID,
 			APIVersion:         "snapshotvalidator.ciscosso.io/v1alpha1",
