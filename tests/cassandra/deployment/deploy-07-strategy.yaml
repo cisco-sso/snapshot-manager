@@ -43,6 +43,8 @@ spec:
                   value: snapshot-cassandra-0.snapshot-cassandra.snapshots.svc.cluster.local, snapshot-cassandra-1.snapshot-cassandra.snapshots.svc.cluster.local
                 - name: CASSANDRA_CLUSTER_NAME
                   value: snapshot-cassandra
+                - name: JVM_EXTRA_OPTS
+                  value: -Dcassandra.consistent.rangemovement=false
   hooks:
     init:
       template:
