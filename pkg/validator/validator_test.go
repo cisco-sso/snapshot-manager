@@ -302,10 +302,9 @@ func TestBasicFlow(t *testing.T) {
 		t.Fatal("Expected 2 updated validation runs but got", len(c.updatedValidationRuns))
 	}
 	run := c.updatedValidationRuns[1]
-	if run.Status.InitStarted == nil || run.Status.InitFinished != nil {
-		t.Fatal("Expected init to have started")
+	if run.Status.KustStarted == nil || run.Status.KustFinished != nil {
+		t.Fatal("Expected kust to have started")
 	}
-
 	err = v.ProcessValidationRun(run)
 	if err != nil {
 		t.Fatal("Expected no error but got", err)
@@ -314,6 +313,36 @@ func TestBasicFlow(t *testing.T) {
 		t.Fatal("Expected 3 updated validation runs but got", len(c.updatedValidationRuns))
 	}
 	run = c.updatedValidationRuns[2]
+	if run.Status.KustFinished == nil || run.Status.InitStarted != nil {
+		t.Fatal("Expected kust to have finished")
+	}
+	if len(run.Spec.Objects.Claims) != 2 {
+		t.Fatal("Expected 2 kustomized claims but got", len(run.Spec.Objects.Claims))
+	}
+	if len(run.Spec.Objects.Kustomized) != 1 {
+		t.Fatal("Expected 1 kustomized object", len(run.Spec.Objects.Kustomized))
+	}
+
+	err = v.ProcessValidationRun(run)
+	if err != nil {
+		t.Fatal("Expected no error but got", err)
+	}
+	if len(c.updatedValidationRuns) != 4 {
+		t.Fatal("Expected 4 updated validation runs but got", len(c.updatedValidationRuns))
+	}
+	run = c.updatedValidationRuns[3]
+	if run.Status.InitStarted == nil || run.Status.InitFinished != nil {
+		t.Fatal("Expected init to have started")
+	}
+
+	err = v.ProcessValidationRun(run)
+	if err != nil {
+		t.Fatal("Expected no error but got", err)
+	}
+	if len(c.updatedValidationRuns) != 5 {
+		t.Fatal("Expected 5 updated validation runs but got", len(c.updatedValidationRuns))
+	}
+	run = c.updatedValidationRuns[4]
 	if run.Status.InitFinished == nil || run.Status.PreValidationStarted != nil {
 		t.Fatal("Expected init to have finished")
 	}
@@ -323,12 +352,8 @@ func TestBasicFlow(t *testing.T) {
 	if len(c.newJobs) != 1 {
 		t.Fatal("Expected 1 init job but got", len(c.newJobs))
 	}
-	/*if len(c.newSts) != 1 {
-		t.Fatal("Expected 1 stateful set but got", len(c.newSts))
-	}*/
-
 	err = v.ProcessValidationRun(run)
-	run = c.updatedValidationRuns[3]
+	run = c.updatedValidationRuns[5]
 	if run.Status.PreValidationStarted == nil || run.Status.PreValidationFinished != nil {
 		t.Fatal("Expected pre-validation to have started")
 	}
@@ -337,29 +362,29 @@ func TestBasicFlow(t *testing.T) {
 	}
 
 	err = v.ProcessValidationRun(run)
-	run = c.updatedValidationRuns[4]
+	run = c.updatedValidationRuns[6]
 	if run.Status.PreValidationFinished == nil || run.Status.ValidationStarted != nil {
 		t.Fatal("Expected pre-validation to have finished")
 	}
 	if len(c.newJobs) != 2 {
-		t.Fatal("Expected 2 init job but got", len(c.newJobs))
+		t.Fatal("Expected 2 job but got", len(c.newJobs))
 	}
 
 	err = v.ProcessValidationRun(run)
-	run = c.updatedValidationRuns[5]
+	run = c.updatedValidationRuns[7]
 	if run.Status.ValidationStarted == nil || run.Status.ValidationFinished != nil {
 		t.Fatal("Expected validation to have started")
 	}
 	if len(c.newJobs) != 2 {
-		t.Fatal("Expected 2 init job but got", len(c.newJobs))
+		t.Fatal("Expected 2 job but got", len(c.newJobs))
 	}
 
 	err = v.ProcessValidationRun(run)
-	run = c.updatedValidationRuns[6]
+	run = c.updatedValidationRuns[8]
 	if run.Status.ValidationFinished == nil {
 		t.Fatal("Expected validation to have finished")
 	}
 	if len(c.newJobs) != 3 {
-		t.Fatal("Expected 3 init job but got", len(c.newJobs))
+		t.Fatal("Expected 3 job but got", len(c.newJobs))
 	}
 }
