@@ -18,7 +18,7 @@ var (
 
 type validator struct {
 	kube  KubeCalls
-	mutex *sync.Mutex
+	mutex map[string]*sync.Mutex
 }
 
 type Validator interface {
@@ -29,7 +29,7 @@ type Validator interface {
 func NewValidator(kube KubeCalls) Validator {
 	return &validator{
 		kube,
-		&sync.Mutex{},
+		make(map[string]*sync.Mutex),
 	}
 }
 
@@ -167,10 +167,13 @@ func (v *validator) cleanup(run *vs.ValidationRun) error {
 }
 
 func (v *validator) ProcessValidationRun(run *vs.ValidationRun) (err error) {
-	//TODO: add mutex per validation strategy
 	glog.Infof("processing validation run %v/%v", run.Namespace, run.Name)
-	//v.mutex.Lock()
-	//defer v.mutex.Unlock()
+	mutexId := run.Namespace + "/" + run.Name
+	if v.mutex[mutexId] == nil {
+		v.mutex[mutexId] = &sync.Mutex{}
+	}
+	v.mutex[mutexId].Lock()
+	defer v.mutex[mutexId].Unlock()
 
 	copy := run.DeepCopy()
 	if run.Status.KustStarted == nil {
@@ -203,26 +206,27 @@ func (v *validator) ProcessValidationRun(run *vs.ValidationRun) (err error) {
 	return
 }
 
-func (v *validator) ProcessSnapshot(snapshot *snap.VolumeSnapshot) (err error) {
-	//TODO: add mutex per validation strategy
+func (v *validator) ProcessSnapshot(snapshot *snap.VolumeSnapshot) error {
 	glog.Infof("processing snapshot %v/%v", snapshot.Metadata.Namespace, snapshot.Metadata.Name)
-	//v.mutex.Lock()
-	//defer v.mutex.Unlock()
-	run, new, err := v.getRun(snapshot)
+	run, strategy, new, err := v.getRun(snapshot)
 	if run != nil {
 		glog.V(4).Infof("got run %v/%v for snapshot %v/%v, new(%v)", run.Namespace, run.Name, snapshot.Metadata.Namespace, snapshot.Metadata.Name, new)
 	} else {
 		glog.V(4).Infof("run is nil for snapshot %v/%v", snapshot.Metadata.Namespace, snapshot.Metadata.Name)
 	}
 	if err != nil {
-		err = e("processing snapshot %v failed getting run", err, snapshot)
-		return
+		return e("processing snapshot %v failed getting run", err, snapshot)
 	}
+	mutexId := strategy.Namespace + "/" + strategy.Name
+	if v.mutex[mutexId] == nil {
+		v.mutex[mutexId] = &sync.Mutex{}
+	}
+	v.mutex[mutexId].Lock()
+	defer v.mutex[mutexId].Unlock()
 	err = v.updateRun(run, snapshot, new)
 	if err != nil {
-		err = e("processing snapshot %v failed updating run", err, snapshot)
-		return
+		return e("processing snapshot %v failed updating run", err, snapshot)
 	}
 	glog.Infof("finished processing snapshot %v/%v successfully", snapshot.Metadata.Namespace, snapshot.Metadata.Name)
-	return
+	return nil
 }
