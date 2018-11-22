@@ -206,7 +206,6 @@ func column(a, b string) string {
 }
 
 func sortArrays(k *kust.Kustomization) {
-	//TODO: may need to sort other arrays when starting to use them
 	sort.Strings(k.Resources)
 }
 

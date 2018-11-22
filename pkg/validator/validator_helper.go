@@ -115,13 +115,11 @@ func (v *validator) matchStrategy(pod *core.Pod) (*vs.ValidationStrategy, error)
 
 func (v *validator) matchRun(strategy *vs.ValidationStrategy) (*vs.ValidationRun, error) {
 	//TODO: implement as InformerIndexer
-	//TODO: resync
 	runs, err := v.kube.ListRuns()
 	if err != nil {
 		return nil, err
 	}
 	glog.V(4).Infof("matching run for strategy %v/%v, from %v runs", strategy.Namespace, strategy.Name, len(runs))
-	//TODO: sort runs by time
 	for _, r := range runs {
 		for _, ref := range r.OwnerReferences {
 			if ref.UID == strategy.UID {
@@ -167,7 +165,6 @@ func (v *validator) initRun(strategy *vs.ValidationStrategy) (*vs.ValidationRun,
 		},
 		Status: vs.ValidationRunStatus{},
 	}
-	//TODO: use incrementing counter instead of UUID
 	run.Spec.Suffix = string(uuid.NewUUID())
 	run.Name = strategy.Name + "-" + run.Spec.Suffix
 	run.Namespace = strategy.Namespace
@@ -356,8 +353,44 @@ func getId(pv *core.PersistentVolume) (string, string, error) {
 	//TODO add other volume sources
 	if pv.Spec.Cinder != nil {
 		return "validated-cinder-volume", pv.Spec.Cinder.VolumeID, nil
+	} else if pv.Spec.GCEPersistentDisk != nil {
+		return "validated-GCEPersistentDisk-volume", pv.Spec.GCEPersistentDisk.PDName, nil
+	} else if pv.Spec.AWSElasticBlockStore != nil {
+		return "validated-AWSElasticBlockStore-volume", pv.Spec.AWSElasticBlockStore.VolumeID, nil
+	} else if pv.Spec.HostPath != nil {
+		return "validated-HostPath-volume", pv.Spec.HostPath.Path, nil
+	} else if pv.Spec.Glusterfs != nil {
+		return "validated-Glusterfs-volume", pv.Spec.Glusterfs.EndpointsName, nil
+	} else if pv.Spec.NFS != nil {
+		return "validated-NFS-volume", pv.Spec.NFS.Server + ":" + pv.Spec.NFS.Path, nil
+	} else if pv.Spec.RBD != nil {
+		return "validated-RBD-volume", pv.Spec.RBD.RBDImage, nil
+	} else if pv.Spec.ISCSI != nil {
+		return "validated-ISCSI-volume", pv.Spec.ISCSI.IQN, nil
+	} else if pv.Spec.CephFS != nil {
+		return "validated-CephFS-volume", pv.Spec.CephFS.Path, nil
+	} else if pv.Spec.Flocker != nil {
+		return "validated-Flocker-volume", pv.Spec.Flocker.DatasetUUID, nil
+	} else if pv.Spec.AzureFile != nil {
+		return "validated-AzureFile-volume", pv.Spec.AzureFile.ShareName, nil
+	} else if pv.Spec.VsphereVolume != nil {
+		return "validated-VsphereVolume-volume", pv.Spec.VsphereVolume.VolumePath, nil
+	} else if pv.Spec.Quobyte != nil {
+		return "validated-Quobyte-volume", pv.Spec.Quobyte.Volume, nil
+	} else if pv.Spec.AzureDisk != nil {
+		return "validated-AzureDisk-volume", pv.Spec.AzureDisk.DiskName, nil
+	} else if pv.Spec.PhotonPersistentDisk != nil {
+		return "validated-PhotonPersistentDisk-volume", pv.Spec.PhotonPersistentDisk.PdID, nil
+	} else if pv.Spec.PortworxVolume != nil {
+		return "validated-PortworxVolume-volume", pv.Spec.PortworxVolume.VolumeID, nil
+	} else if pv.Spec.Local != nil {
+		return "validated-Local-volume", pv.Spec.Local.Path, nil
+	} else if pv.Spec.StorageOS != nil {
+		return "validated-StorageOS-volume", pv.Spec.StorageOS.VolumeName, nil
+	} else if pv.Spec.CSI != nil {
+		return "validated-CSI-volume", pv.Spec.CSI.VolumeHandle, nil
 	}
-	return "unknown", "unknown", fmt.Errorf("TODO: implement getId for other than cinder source")
+	return "unknown", "unknown", fmt.Errorf("TODO: implement getId for other source")
 }
 
 func (v *validator) createObjects(run *vs.ValidationRun) error {

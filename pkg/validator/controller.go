@@ -127,8 +127,6 @@ func (c *controller) enqueueValidatorRun(obj interface{}) {
 		runtime.HandleError(err)
 		return
 	} else {
-		//TODO: learn how to properly sync cache
-		time.Sleep(100 * time.Millisecond)
 		//c.validationRunWorkqueue.AddRateLimited(key)
 		c.validationRunWorkqueue.Add(key)
 	}
@@ -146,8 +144,6 @@ func (c *controller) enqueueSnapshot(obj interface{}) {
 		runtime.HandleError(err)
 		return
 	} else {
-		//TODO: learn how to properly sync cache
-		time.Sleep(100 * time.Millisecond)
 		//c.snapshotWorkqueue.AddRateLimited(key)
 		c.snapshotWorkqueue.Add(key)
 	}
