@@ -7,8 +7,7 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/scheme"
-	restclient "k8s.io/client-go/rest"
-	//"k8s.io/client-go/tools/clientcmd"
+	"k8s.io/client-go/tools/clientcmd"
 
 	svclientset "github.com/cisco-sso/snapshot-validator/pkg/client/clientset/versioned"
 	svs "github.com/cisco-sso/snapshot-validator/pkg/client/clientset/versioned/scheme"
@@ -16,6 +15,16 @@ import (
 	snapshotclient "github.com/kubernetes-incubator/external-storage/snapshot/pkg/client"
 	"k8s.io/sample-controller/pkg/signals"
 )
+
+var (
+	masterURL  string
+	kubeconfig string
+)
+
+func init() {
+	flag.StringVar(&kubeconfig, "kubeconfig", "", "Path to a kubeconfig. Only required if out-of-cluster.")
+	flag.StringVar(&masterURL, "master", "", "The address of the Kubernetes API server. Overrides any value in kubeconfig. Only required if out-of-cluster.")
+}
 
 func main() {
 	stopCh := signals.SetupSignalHandler()
@@ -30,16 +39,9 @@ func main() {
 	}
 }
 
-func buildConfig() (*restclient.Config, error) {
-	/*kubeconfigPath := "/Users/jawoznia/tmp/kustomize/sre1.csco.cloud"
-	masterUrl := "" // "64.102.180.113"
-	return clientcmd.BuildConfigFromFlags(masterUrl, kubeconfigPath)*/
-	return restclient.InClusterConfig()
-}
-
 func clients() validator.Clients {
 	c := validator.Clients{}
-	kubeconfig, err := buildConfig()
+	kubeconfig, err := clientcmd.BuildConfigFromFlags(masterURL, kubeconfig)
 	if err != nil {
 		glog.Fatalf("Error building kubeconfig: %v", err)
 	}
