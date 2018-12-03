@@ -217,6 +217,7 @@ func (c *controller) Run(threadiness int, stopCh <-chan struct{}) error {
 	for i := 0; i < threadiness; i++ {
 		go wait.Until(func() { c.runWorker(c.processNextSnapshot) }, time.Second, stopCh)
 		go wait.Until(func() { c.runWorker(c.processNextValidation) }, time.Second, stopCh)
+		go wait.Until(func() { c.runWorker(c.processNextRevert) }, time.Second, stopCh)
 	}
 	glog.Info("Started workers")
 	<-stopCh
@@ -235,6 +236,36 @@ func (c *controller) runWorker(worker func() (bool, error)) {
 	}
 }
 
+func (c *controller) processNextRevert() (bool, error) {
+	obj, shutdown := c.revertWorkqueue.Get()
+	if shutdown {
+		return shutdown, nil
+	}
+	defer c.revertWorkqueue.Done(obj)
+	key, ok := obj.(string)
+	if !ok {
+		c.revertWorkqueue.Forget(obj)
+		return false, fmt.Errorf("expected string in revert workqueue but got %#v", obj)
+	}
+	r, ok, err := c.srInformer.GetStore().GetByKey(key)
+	if !ok || err != nil {
+		c.revertWorkqueue.Forget(key)
+		return false, fmt.Errorf("key %v not found in store", key)
+	}
+	rev, ok := r.(*vs.SnapshotRevert)
+	if !ok {
+		c.revertWorkqueue.Forget(key)
+		return false, fmt.Errorf("expected type SnapshotRevert for key %v but received type %T", key, obj)
+	}
+	if err := c.reverts.ProcessSnapshotRevert(rev); err != nil {
+		c.revertWorkqueue.AddRateLimited(key)
+		return false, fmt.Errorf("processing SnapshotRevert %v failed: %v", key, err)
+	}
+	c.revertWorkqueue.Forget(obj)
+	glog.Infof("Successfully synced '%s'", key)
+	return false, nil
+}
+
 func (c *controller) processNextValidation() (bool, error) {
 	obj, shutdown := c.validationRunWorkqueue.Get()
 	if shutdown {
@@ -248,12 +279,12 @@ func (c *controller) processNextValidation() (bool, error) {
 	}
 	obj, ok, err := c.vrInformer.GetStore().GetByKey(key)
 	if !ok || err != nil {
-		c.validationRunWorkqueue.Forget(obj)
+		c.validationRunWorkqueue.Forget(key)
 		return false, fmt.Errorf("key %v not found in store", key)
 	}
 	validationRun, ok := obj.(*vs.ValidationRun)
 	if !ok {
-		c.validationRunWorkqueue.Forget(obj)
+		c.validationRunWorkqueue.Forget(key)
 		return false, fmt.Errorf("expected type ValidationRun for key %v but received type %T", key, obj)
 	}
 	if err := c.validator.ProcessValidationRun(validationRun); err != nil {
@@ -278,12 +309,12 @@ func (c *controller) processNextSnapshot() (bool, error) {
 	}
 	obj, ok, err := c.snapshotStore.GetByKey(key)
 	if !ok || err != nil {
-		c.snapshotWorkqueue.Forget(obj)
+		c.snapshotWorkqueue.Forget(key)
 		return false, fmt.Errorf("key %v not found in store", key)
 	}
 	snapshot, ok := obj.(*snap.VolumeSnapshot)
 	if !ok {
-		c.snapshotWorkqueue.Forget(obj)
+		c.snapshotWorkqueue.Forget(key)
 		return false, fmt.Errorf("expected type VolumeSnapshot for key %v but received type %T", key, obj)
 	}
 	if err := c.validator.ProcessSnapshot(snapshot); err != nil {
