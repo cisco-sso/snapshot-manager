@@ -12,7 +12,53 @@ const (
 	ValidationStrategyResourcePlural = "ValidationStrategies"
 	ValidationRunResource            = "ValidationRun"
 	ValidationRunResourcePlural      = "ValidationRuns"
+	SnapshotRevertResource           = "SnapshotRevert"
+	SnapshotRevertResourcePlural     = "SnapshotReverts"
 )
+
+// +genclient
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+
+// SnapshotRevert
+type SnapshotRevert struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+
+	Spec   SnapshotRevertSpec   `json:"spec"`
+	Status SnapshotRevertStatus `json:"status"`
+}
+
+// SnapshotRevertSpec
+type SnapshotRevertSpec struct {
+	StsType *StatefulSetType `json:"statefulSet,omitempty"`
+
+	Validation *string      `json:"validation,omitempty"`
+	TargetTime *metav1.Time `json:"targetTime,omitempty"`
+}
+
+// SnapshotRevertStatus
+type SnapshotRevertStatus struct {
+	Reverts []SnapshotRevertDetails `json:"reverts,omitempty"`
+}
+
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+
+// ValidationStrategyList
+type SnapshotRevertList struct {
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata"`
+
+	Items []SnapshotRevert `json:"items"`
+}
+
+// SnapshotRevertDetails
+type SnapshotRevertDetails struct {
+	TargetTime  *metav1.Time      `json:"targetTime,omitempty"`
+	PreVolumes  map[string]string `json:"preVolumes"`
+	PrePVs      map[string]string `json:"prePVs"`
+	PostVolumes map[string]string `json:"postVolumes"`
+	PostPVs     map[string]string `json:"postPVs"`
+}
 
 // +genclient
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object

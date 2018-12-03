@@ -51,10 +51,15 @@ type controller struct {
 	vsLister        vslister.ValidationStrategyLister
 	vrInformer      kcache.SharedIndexInformer
 	vrLister        vslister.ValidationRunLister
+	srInformer      kcache.SharedIndexInformer
+	srLister        vslister.SnapshotRevertLister
 
 	snapshotWorkqueue      workqueue.RateLimitingInterface
 	validationRunWorkqueue workqueue.RateLimitingInterface
-	validator              Validator
+	revertWorkqueue        workqueue.RateLimitingInterface
+
+	reverts   Reverts
+	validator Validator
 }
 
 func NewController(clients Clients, stopCh <-chan struct{}) *controller {
@@ -81,12 +86,16 @@ func NewController(clients Clients, stopCh <-chan struct{}) *controller {
 		vsLister:        svfac.Snapshotmanager().V1alpha1().ValidationStrategies().Lister(),
 		vrInformer:      svfac.Snapshotmanager().V1alpha1().ValidationRuns().Informer(),
 		vrLister:        svfac.Snapshotmanager().V1alpha1().ValidationRuns().Lister(),
+		srInformer:      svfac.Snapshotmanager().V1alpha1().SnapshotReverts().Informer(),
+		srLister:        svfac.Snapshotmanager().V1alpha1().SnapshotReverts().Lister(),
 
 		snapshotWorkqueue:      workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "VolumeSnapshots"),
 		validationRunWorkqueue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "ValidatorRun"),
+		revertWorkqueue:        workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "SnapshotRevert"),
 	}
 
 	c.validator = NewValidator(c)
+	c.reverts = NewReverts(c)
 
 	snapshotWatch := kcache.NewListWatchFromClient(
 		clients.SnapshotClient,
@@ -108,10 +117,30 @@ func NewController(clients Clients, stopCh <-chan struct{}) *controller {
 		UpdateFunc: func(old, new interface{}) { c.enqueueValidatorRun(new) },
 		DeleteFunc: c.scheduleValidatorRunDelete,
 	})
+	c.srInformer.AddEventHandler(kcache.ResourceEventHandlerFuncs{
+		AddFunc:    c.enqueueSnapshotRevert,
+		UpdateFunc: func(old, new interface{}) { c.enqueueSnapshotRevert(new) },
+	})
 
 	go kfac.Start(stopCh)
 	go svfac.Start(stopCh)
 	return c
+}
+
+func (c *controller) enqueueSnapshotRevert(obj interface{}) {
+	vr, ok := obj.(*vs.SnapshotRevert)
+	if !ok {
+		glog.Warningf("expecting type SnapshotRevert but received type %T", obj)
+		return
+	}
+	glog.Infof("enqueue SnapshotRevert %v/%v", vr.Namespace, vr.Name)
+
+	if key, err := kcache.MetaNamespaceKeyFunc(obj); err != nil {
+		runtime.HandleError(err)
+		return
+	} else {
+		c.revertWorkqueue.Add(key)
+	}
 }
 
 func (c *controller) enqueueValidatorRun(obj interface{}) {
@@ -179,6 +208,7 @@ func (c *controller) Run(threadiness int, stopCh <-chan struct{}) error {
 		c.jobInformer.HasSynced,
 		c.vsInformer.HasSynced,
 		c.vrInformer.HasSynced,
+		c.srInformer.HasSynced,
 	)
 	if !ok {
 		return fmt.Errorf("failed to wait for caches to sync")
