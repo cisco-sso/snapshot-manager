@@ -19,7 +19,7 @@ limitations under the License.
 package fake
 
 import (
-	v1alpha1 "github.com/cisco-sso/snapshot-validator/pkg/apis/snapshotvalidator/v1alpha1"
+	v1alpha1 "github.com/cisco-sso/snapshot-manager/pkg/apis/snapshotvalidator/v1alpha1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	labels "k8s.io/apimachinery/pkg/labels"
 	schema "k8s.io/apimachinery/pkg/runtime/schema"

@@ -19,9 +19,9 @@ limitations under the License.
 package fake
 
 import (
-	clientset "github.com/cisco-sso/snapshot-validator/pkg/client/clientset/versioned"
-	snapshotvalidatorv1alpha1 "github.com/cisco-sso/snapshot-validator/pkg/client/clientset/versioned/typed/snapshotvalidator/v1alpha1"
-	fakesnapshotvalidatorv1alpha1 "github.com/cisco-sso/snapshot-validator/pkg/client/clientset/versioned/typed/snapshotvalidator/v1alpha1/fake"
+	clientset "github.com/cisco-sso/snapshot-manager/pkg/client/clientset/versioned"
+	snapshotvalidatorv1alpha1 "github.com/cisco-sso/snapshot-manager/pkg/client/clientset/versioned/typed/snapshotvalidator/v1alpha1"
+	fakesnapshotvalidatorv1alpha1 "github.com/cisco-sso/snapshot-manager/pkg/client/clientset/versioned/typed/snapshotvalidator/v1alpha1/fake"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/discovery"

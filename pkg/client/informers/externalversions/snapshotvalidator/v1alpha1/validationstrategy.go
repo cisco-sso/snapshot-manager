@@ -21,10 +21,10 @@ package v1alpha1
 import (
 	time "time"
 
-	snapshotvalidatorv1alpha1 "github.com/cisco-sso/snapshot-validator/pkg/apis/snapshotvalidator/v1alpha1"
-	versioned "github.com/cisco-sso/snapshot-validator/pkg/client/clientset/versioned"
-	internalinterfaces "github.com/cisco-sso/snapshot-validator/pkg/client/informers/externalversions/internalinterfaces"
-	v1alpha1 "github.com/cisco-sso/snapshot-validator/pkg/client/listers/snapshotvalidator/v1alpha1"
+	snapshotvalidatorv1alpha1 "github.com/cisco-sso/snapshot-manager/pkg/apis/snapshotvalidator/v1alpha1"
+	versioned "github.com/cisco-sso/snapshot-manager/pkg/client/clientset/versioned"
+	internalinterfaces "github.com/cisco-sso/snapshot-manager/pkg/client/informers/externalversions/internalinterfaces"
+	v1alpha1 "github.com/cisco-sso/snapshot-manager/pkg/client/listers/snapshotvalidator/v1alpha1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	watch "k8s.io/apimachinery/pkg/watch"

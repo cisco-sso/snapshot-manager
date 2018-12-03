@@ -3,7 +3,7 @@ package validator
 import (
 	"bytes"
 	"fmt"
-	vs "github.com/cisco-sso/snapshot-validator/pkg/apis/snapshotvalidator/v1alpha1"
+	vs "github.com/cisco-sso/snapshot-manager/pkg/apis/snapshotvalidator/v1alpha1"
 	"github.com/ghodss/yaml"
 	"reflect"
 	kust "sigs.k8s.io/kustomize/pkg/types"

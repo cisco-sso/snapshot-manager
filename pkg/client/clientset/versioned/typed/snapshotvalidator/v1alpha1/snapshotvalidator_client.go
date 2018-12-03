@@ -19,8 +19,8 @@ limitations under the License.
 package v1alpha1
 
 import (
-	v1alpha1 "github.com/cisco-sso/snapshot-validator/pkg/apis/snapshotvalidator/v1alpha1"
-	"github.com/cisco-sso/snapshot-validator/pkg/client/clientset/versioned/scheme"
+	v1alpha1 "github.com/cisco-sso/snapshot-manager/pkg/apis/snapshotvalidator/v1alpha1"
+	"github.com/cisco-sso/snapshot-manager/pkg/client/clientset/versioned/scheme"
 	serializer "k8s.io/apimachinery/pkg/runtime/serializer"
 	rest "k8s.io/client-go/rest"
 )

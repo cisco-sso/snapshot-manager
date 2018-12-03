@@ -2,7 +2,7 @@ package validator
 
 import (
 	"bytes"
-	vs "github.com/cisco-sso/snapshot-validator/pkg/apis/snapshotvalidator/v1alpha1"
+	vs "github.com/cisco-sso/snapshot-manager/pkg/apis/snapshotvalidator/v1alpha1"
 	"github.com/ghodss/yaml"
 	"io"
 	core "k8s.io/api/core/v1"

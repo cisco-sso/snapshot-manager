@@ -9,9 +9,9 @@ import (
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/clientcmd"
 
-	svclientset "github.com/cisco-sso/snapshot-validator/pkg/client/clientset/versioned"
-	svs "github.com/cisco-sso/snapshot-validator/pkg/client/clientset/versioned/scheme"
-	"github.com/cisco-sso/snapshot-validator/pkg/validator"
+	svclientset "github.com/cisco-sso/snapshot-manager/pkg/client/clientset/versioned"
+	svs "github.com/cisco-sso/snapshot-manager/pkg/client/clientset/versioned/scheme"
+	"github.com/cisco-sso/snapshot-manager/pkg/validator"
 	snapshotclient "github.com/kubernetes-incubator/external-storage/snapshot/pkg/client"
 	"k8s.io/sample-controller/pkg/signals"
 )

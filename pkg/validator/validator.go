@@ -2,7 +2,7 @@ package validator
 
 import (
 	"fmt"
-	vs "github.com/cisco-sso/snapshot-validator/pkg/apis/snapshotvalidator/v1alpha1"
+	vs "github.com/cisco-sso/snapshot-manager/pkg/apis/snapshotvalidator/v1alpha1"
 	"github.com/golang/glog"
 	snap "github.com/kubernetes-incubator/external-storage/snapshot/pkg/apis/crd/v1"
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"

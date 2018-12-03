@@ -2,10 +2,10 @@ package validator
 
 import (
 	"fmt"
-	vs "github.com/cisco-sso/snapshot-validator/pkg/apis/snapshotvalidator/v1alpha1"
-	svclientset "github.com/cisco-sso/snapshot-validator/pkg/client/clientset/versioned"
-	svinformers "github.com/cisco-sso/snapshot-validator/pkg/client/informers/externalversions"
-	vslister "github.com/cisco-sso/snapshot-validator/pkg/client/listers/snapshotvalidator/v1alpha1"
+	vs "github.com/cisco-sso/snapshot-manager/pkg/apis/snapshotvalidator/v1alpha1"
+	svclientset "github.com/cisco-sso/snapshot-manager/pkg/client/clientset/versioned"
+	svinformers "github.com/cisco-sso/snapshot-manager/pkg/client/informers/externalversions"
+	vslister "github.com/cisco-sso/snapshot-manager/pkg/client/listers/snapshotvalidator/v1alpha1"
 	"github.com/golang/glog"
 	snap "github.com/kubernetes-incubator/external-storage/snapshot/pkg/apis/crd/v1"
 	core "k8s.io/api/core/v1"
@@ -168,7 +168,7 @@ func (c *controller) Run(threadiness int, stopCh <-chan struct{}) error {
 	defer runtime.HandleCrash()
 	defer c.snapshotWorkqueue.ShutDown()
 	defer c.validationRunWorkqueue.ShutDown()
-	glog.Info("Starting snapshot-validator controller")
+	glog.Info("Starting snapshot-manager controller")
 	glog.Info("Waiting for informer caches to sync")
 	go c.snapshotController.Run(stopCh)
 	ok := kcache.WaitForCacheSync(stopCh,

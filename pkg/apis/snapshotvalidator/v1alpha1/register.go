@@ -1,7 +1,7 @@
 package v1alpha1
 
 import (
-	controller "github.com/cisco-sso/snapshot-validator/pkg/apis/snapshotvalidator"
+	controller "github.com/cisco-sso/snapshot-manager/pkg/apis/snapshotvalidator"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	schema "k8s.io/apimachinery/pkg/runtime/schema"

@@ -23,9 +23,9 @@ import (
 	sync "sync"
 	time "time"
 
-	versioned "github.com/cisco-sso/snapshot-validator/pkg/client/clientset/versioned"
-	internalinterfaces "github.com/cisco-sso/snapshot-validator/pkg/client/informers/externalversions/internalinterfaces"
-	snapshotvalidator "github.com/cisco-sso/snapshot-validator/pkg/client/informers/externalversions/snapshotvalidator"
+	versioned "github.com/cisco-sso/snapshot-manager/pkg/client/clientset/versioned"
+	internalinterfaces "github.com/cisco-sso/snapshot-manager/pkg/client/informers/externalversions/internalinterfaces"
+	snapshotvalidator "github.com/cisco-sso/snapshot-manager/pkg/client/informers/externalversions/snapshotvalidator"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	schema "k8s.io/apimachinery/pkg/runtime/schema"

@@ -19,8 +19,8 @@ limitations under the License.
 package snapshotvalidator
 
 import (
-	internalinterfaces "github.com/cisco-sso/snapshot-validator/pkg/client/informers/externalversions/internalinterfaces"
-	v1alpha1 "github.com/cisco-sso/snapshot-validator/pkg/client/informers/externalversions/snapshotvalidator/v1alpha1"
+	internalinterfaces "github.com/cisco-sso/snapshot-manager/pkg/client/informers/externalversions/internalinterfaces"
+	v1alpha1 "github.com/cisco-sso/snapshot-manager/pkg/client/informers/externalversions/snapshotvalidator/v1alpha1"
 )
 
 // Interface provides access to each of this group's versions.
