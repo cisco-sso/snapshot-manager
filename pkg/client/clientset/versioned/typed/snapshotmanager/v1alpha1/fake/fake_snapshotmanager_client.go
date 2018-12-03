@@ -28,6 +28,10 @@ type FakeSnapshotmanagerV1alpha1 struct {
 	*testing.Fake
 }
 
+func (c *FakeSnapshotmanagerV1alpha1) SnapshotReverts(namespace string) v1alpha1.SnapshotRevertInterface {
+	return &FakeSnapshotReverts{c, namespace}
+}
+
 func (c *FakeSnapshotmanagerV1alpha1) ValidationRuns(namespace string) v1alpha1.ValidationRunInterface {
 	return &FakeValidationRuns{c, namespace}
 }

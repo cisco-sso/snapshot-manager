@@ -18,6 +18,8 @@ limitations under the License.
 
 package v1alpha1
 
+type SnapshotRevertExpansion interface{}
+
 type ValidationRunExpansion interface{}
 
 type ValidationStrategyExpansion interface{}

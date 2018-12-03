@@ -27,6 +27,7 @@ import (
 
 type SnapshotmanagerV1alpha1Interface interface {
 	RESTClient() rest.Interface
+	SnapshotRevertsGetter
 	ValidationRunsGetter
 	ValidationStrategiesGetter
 }
@@ -34,6 +35,10 @@ type SnapshotmanagerV1alpha1Interface interface {
 // SnapshotmanagerV1alpha1Client is used to interact with features provided by the snapshotmanager.ciscosso.io group.
 type SnapshotmanagerV1alpha1Client struct {
 	restClient rest.Interface
+}
+
+func (c *SnapshotmanagerV1alpha1Client) SnapshotReverts(namespace string) SnapshotRevertInterface {
+	return newSnapshotReverts(c, namespace)
 }
 
 func (c *SnapshotmanagerV1alpha1Client) ValidationRuns(namespace string) ValidationRunInterface {

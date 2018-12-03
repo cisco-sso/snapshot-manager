@@ -18,6 +18,14 @@ limitations under the License.
 
 package v1alpha1
 
+// SnapshotRevertListerExpansion allows custom methods to be added to
+// SnapshotRevertLister.
+type SnapshotRevertListerExpansion interface{}
+
+// SnapshotRevertNamespaceListerExpansion allows custom methods to be added to
+// SnapshotRevertNamespaceLister.
+type SnapshotRevertNamespaceListerExpansion interface{}
+
 // ValidationRunListerExpansion allows custom methods to be added to
 // ValidationRunLister.
 type ValidationRunListerExpansion interface{}
