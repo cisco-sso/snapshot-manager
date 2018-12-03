@@ -11,7 +11,7 @@ import (
 
 	svclientset "github.com/cisco-sso/snapshot-manager/pkg/client/clientset/versioned"
 	svs "github.com/cisco-sso/snapshot-manager/pkg/client/clientset/versioned/scheme"
-	"github.com/cisco-sso/snapshot-manager/pkg/validator"
+	"github.com/cisco-sso/snapshot-manager/pkg/manager"
 	snapshotclient "github.com/kubernetes-incubator/external-storage/snapshot/pkg/client"
 	"k8s.io/sample-controller/pkg/signals"
 )
@@ -32,15 +32,15 @@ func main() {
 	flag.Set("logtostderr", "true")
 
 	clients := clients()
-	controller := validator.NewController(clients, stopCh)
+	controller := manager.NewController(clients, stopCh)
 
 	if err := controller.Run(2, stopCh); err != nil {
 		glog.Fatalf("Error running controller: %v", err)
 	}
 }
 
-func clients() validator.Clients {
-	c := validator.Clients{}
+func clients() manager.Clients {
+	c := manager.Clients{}
 	kubeconfig, err := clientcmd.BuildConfigFromFlags(masterURL, kubeconfig)
 	if err != nil {
 		glog.Fatalf("Error building kubeconfig: %v", err)
@@ -58,7 +58,7 @@ func clients() validator.Clients {
 
 	c.SvClientset, err = svclientset.NewForConfig(kubeconfig)
 	if err != nil {
-		glog.Fatalf("Error building kubernetes snapshot validator client: %v", err)
+		glog.Fatalf("Error building kubernetes snapshot manager client: %v", err)
 	}
 
 	utilruntime.Must(svs.AddToScheme(scheme.Scheme))

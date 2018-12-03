@@ -20,8 +20,8 @@ package fake
 
 import (
 	clientset "github.com/cisco-sso/snapshot-manager/pkg/client/clientset/versioned"
-	snapshotvalidatorv1alpha1 "github.com/cisco-sso/snapshot-manager/pkg/client/clientset/versioned/typed/snapshotvalidator/v1alpha1"
-	fakesnapshotvalidatorv1alpha1 "github.com/cisco-sso/snapshot-manager/pkg/client/clientset/versioned/typed/snapshotvalidator/v1alpha1/fake"
+	snapshotmanagerv1alpha1 "github.com/cisco-sso/snapshot-manager/pkg/client/clientset/versioned/typed/snapshotmanager/v1alpha1"
+	fakesnapshotmanagerv1alpha1 "github.com/cisco-sso/snapshot-manager/pkg/client/clientset/versioned/typed/snapshotmanager/v1alpha1/fake"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/discovery"
@@ -71,12 +71,12 @@ func (c *Clientset) Discovery() discovery.DiscoveryInterface {
 
 var _ clientset.Interface = &Clientset{}
 
-// SnapshotvalidatorV1alpha1 retrieves the SnapshotvalidatorV1alpha1Client
-func (c *Clientset) SnapshotvalidatorV1alpha1() snapshotvalidatorv1alpha1.SnapshotvalidatorV1alpha1Interface {
-	return &fakesnapshotvalidatorv1alpha1.FakeSnapshotvalidatorV1alpha1{Fake: &c.Fake}
+// SnapshotmanagerV1alpha1 retrieves the SnapshotmanagerV1alpha1Client
+func (c *Clientset) SnapshotmanagerV1alpha1() snapshotmanagerv1alpha1.SnapshotmanagerV1alpha1Interface {
+	return &fakesnapshotmanagerv1alpha1.FakeSnapshotmanagerV1alpha1{Fake: &c.Fake}
 }
 
-// Snapshotvalidator retrieves the SnapshotvalidatorV1alpha1Client
-func (c *Clientset) Snapshotvalidator() snapshotvalidatorv1alpha1.SnapshotvalidatorV1alpha1Interface {
-	return &fakesnapshotvalidatorv1alpha1.FakeSnapshotvalidatorV1alpha1{Fake: &c.Fake}
+// Snapshotmanager retrieves the SnapshotmanagerV1alpha1Client
+func (c *Clientset) Snapshotmanager() snapshotmanagerv1alpha1.SnapshotmanagerV1alpha1Interface {
+	return &fakesnapshotmanagerv1alpha1.FakeSnapshotmanagerV1alpha1{Fake: &c.Fake}
 }

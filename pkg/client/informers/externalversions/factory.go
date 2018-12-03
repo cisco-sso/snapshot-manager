@@ -25,7 +25,7 @@ import (
 
 	versioned "github.com/cisco-sso/snapshot-manager/pkg/client/clientset/versioned"
 	internalinterfaces "github.com/cisco-sso/snapshot-manager/pkg/client/informers/externalversions/internalinterfaces"
-	snapshotvalidator "github.com/cisco-sso/snapshot-manager/pkg/client/informers/externalversions/snapshotvalidator"
+	snapshotmanager "github.com/cisco-sso/snapshot-manager/pkg/client/informers/externalversions/snapshotmanager"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	schema "k8s.io/apimachinery/pkg/runtime/schema"
@@ -172,9 +172,9 @@ type SharedInformerFactory interface {
 	ForResource(resource schema.GroupVersionResource) (GenericInformer, error)
 	WaitForCacheSync(stopCh <-chan struct{}) map[reflect.Type]bool
 
-	Snapshotvalidator() snapshotvalidator.Interface
+	Snapshotmanager() snapshotmanager.Interface
 }
 
-func (f *sharedInformerFactory) Snapshotvalidator() snapshotvalidator.Interface {
-	return snapshotvalidator.New(f, f.namespace, f.tweakListOptions)
+func (f *sharedInformerFactory) Snapshotmanager() snapshotmanager.Interface {
+	return snapshotmanager.New(f, f.namespace, f.tweakListOptions)
 }

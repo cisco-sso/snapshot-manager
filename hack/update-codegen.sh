@@ -29,7 +29,7 @@ CODEGEN_PKG=${CODEGEN_PKG:-$(cd ${SCRIPT_ROOT}; ls -d -1 ./vendor/k8s.io/code-ge
 ${CODEGEN_PKG}/generate-groups.sh all \
   $ROOT_PACKAGE/pkg/client \
   $ROOT_PACKAGE/pkg/apis \
-  snapshotvalidator:v1alpha1
+  snapshotmanager:v1alpha1
 
 # To use your own boilerplate text use:
 #   --go-header-file ${SCRIPT_ROOT}/hack/custom-boilerplate.go.txt

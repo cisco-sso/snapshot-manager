@@ -19,7 +19,7 @@ limitations under the License.
 package versioned
 
 import (
-	snapshotvalidatorv1alpha1 "github.com/cisco-sso/snapshot-manager/pkg/client/clientset/versioned/typed/snapshotvalidator/v1alpha1"
+	snapshotmanagerv1alpha1 "github.com/cisco-sso/snapshot-manager/pkg/client/clientset/versioned/typed/snapshotmanager/v1alpha1"
 	discovery "k8s.io/client-go/discovery"
 	rest "k8s.io/client-go/rest"
 	flowcontrol "k8s.io/client-go/util/flowcontrol"
@@ -27,27 +27,27 @@ import (
 
 type Interface interface {
 	Discovery() discovery.DiscoveryInterface
-	SnapshotvalidatorV1alpha1() snapshotvalidatorv1alpha1.SnapshotvalidatorV1alpha1Interface
+	SnapshotmanagerV1alpha1() snapshotmanagerv1alpha1.SnapshotmanagerV1alpha1Interface
 	// Deprecated: please explicitly pick a version if possible.
-	Snapshotvalidator() snapshotvalidatorv1alpha1.SnapshotvalidatorV1alpha1Interface
+	Snapshotmanager() snapshotmanagerv1alpha1.SnapshotmanagerV1alpha1Interface
 }
 
 // Clientset contains the clients for groups. Each group has exactly one
 // version included in a Clientset.
 type Clientset struct {
 	*discovery.DiscoveryClient
-	snapshotvalidatorV1alpha1 *snapshotvalidatorv1alpha1.SnapshotvalidatorV1alpha1Client
+	snapshotmanagerV1alpha1 *snapshotmanagerv1alpha1.SnapshotmanagerV1alpha1Client
 }
 
-// SnapshotvalidatorV1alpha1 retrieves the SnapshotvalidatorV1alpha1Client
-func (c *Clientset) SnapshotvalidatorV1alpha1() snapshotvalidatorv1alpha1.SnapshotvalidatorV1alpha1Interface {
-	return c.snapshotvalidatorV1alpha1
+// SnapshotmanagerV1alpha1 retrieves the SnapshotmanagerV1alpha1Client
+func (c *Clientset) SnapshotmanagerV1alpha1() snapshotmanagerv1alpha1.SnapshotmanagerV1alpha1Interface {
+	return c.snapshotmanagerV1alpha1
 }
 
-// Deprecated: Snapshotvalidator retrieves the default version of SnapshotvalidatorClient.
+// Deprecated: Snapshotmanager retrieves the default version of SnapshotmanagerClient.
 // Please explicitly pick a version.
-func (c *Clientset) Snapshotvalidator() snapshotvalidatorv1alpha1.SnapshotvalidatorV1alpha1Interface {
-	return c.snapshotvalidatorV1alpha1
+func (c *Clientset) Snapshotmanager() snapshotmanagerv1alpha1.SnapshotmanagerV1alpha1Interface {
+	return c.snapshotmanagerV1alpha1
 }
 
 // Discovery retrieves the DiscoveryClient
@@ -66,7 +66,7 @@ func NewForConfig(c *rest.Config) (*Clientset, error) {
 	}
 	var cs Clientset
 	var err error
-	cs.snapshotvalidatorV1alpha1, err = snapshotvalidatorv1alpha1.NewForConfig(&configShallowCopy)
+	cs.snapshotmanagerV1alpha1, err = snapshotmanagerv1alpha1.NewForConfig(&configShallowCopy)
 	if err != nil {
 		return nil, err
 	}
@@ -82,7 +82,7 @@ func NewForConfig(c *rest.Config) (*Clientset, error) {
 // panics if there is an error in the config.
 func NewForConfigOrDie(c *rest.Config) *Clientset {
 	var cs Clientset
-	cs.snapshotvalidatorV1alpha1 = snapshotvalidatorv1alpha1.NewForConfigOrDie(c)
+	cs.snapshotmanagerV1alpha1 = snapshotmanagerv1alpha1.NewForConfigOrDie(c)
 
 	cs.DiscoveryClient = discovery.NewDiscoveryClientForConfigOrDie(c)
 	return &cs
@@ -91,7 +91,7 @@ func NewForConfigOrDie(c *rest.Config) *Clientset {
 // New creates a new Clientset for the given RESTClient.
 func New(c rest.Interface) *Clientset {
 	var cs Clientset
-	cs.snapshotvalidatorV1alpha1 = snapshotvalidatorv1alpha1.New(c)
+	cs.snapshotmanagerV1alpha1 = snapshotmanagerv1alpha1.New(c)
 
 	cs.DiscoveryClient = discovery.NewDiscoveryClient(c)
 	return &cs

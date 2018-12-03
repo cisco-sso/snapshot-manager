@@ -1,4 +1,4 @@
-apiVersion: snapshotvalidator.ciscosso.io/v1alpha1
+apiVersion: snapshotmanager.ciscosso.io/v1alpha1
 kind: ValidationStrategy
 metadata:
   name: cassandra

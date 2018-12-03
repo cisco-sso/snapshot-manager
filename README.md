@@ -1,1 +1,1 @@
-Snapshot-validator
+Snapshot-manager
