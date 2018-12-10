@@ -31,9 +31,11 @@ func addKnownTypes(scheme *runtime.Scheme) error {
 	scheme.AddKnownTypes(SchemeGroupVersion,
 		&ValidationStrategy{},
 		&ValidationRun{},
+		&SnapshotRevert{},
 	)
 	scheme.AddKnownTypeWithName(SchemeGroupVersion.WithKind("ValidationStrategyList"), &ValidationStrategyList{})
 	scheme.AddKnownTypeWithName(SchemeGroupVersion.WithKind("ValidationRunList"), &ValidationRunList{})
+	scheme.AddKnownTypeWithName(SchemeGroupVersion.WithKind("SnapshotRevertList"), &SnapshotRevertList{})
 	metav1.AddToGroupVersion(scheme, SchemeGroupVersion)
 	return nil
 }
