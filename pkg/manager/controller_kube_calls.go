@@ -33,6 +33,8 @@ type KubeCalls interface {
 
 type pods interface {
 	ListPods(labels.Selector) ([]*core.Pod, error)
+	PodsReady(*apps.StatefulSet) (bool, error)
+	PodsDeleted(*apps.StatefulSet) (bool, error)
 }
 
 type services interface {
@@ -44,7 +46,8 @@ type persistentVolumeClaims interface {
 	GetPVC(string, string) (*core.PersistentVolumeClaim, error)
 	CreatePVC(*core.PersistentVolumeClaim) error
 	DeletePVC(*core.PersistentVolumeClaim) error
-	ListPVCs(selector labels.Selector) ([]*core.PersistentVolumeClaim, error)
+	ListPVCs(labels.Selector) ([]*core.PersistentVolumeClaim, error)
+	PvcsBound([]*core.PersistentVolumeClaim) bool
 }
 
 type persistentVolumes interface {
@@ -69,6 +72,7 @@ type validationRuns interface {
 
 type snapshots interface {
 	GetSnapshot(string, string) (*snap.VolumeSnapshot, error)
+	ListSnapshots() ([]*snap.VolumeSnapshot, error)
 	LabelSnapshot(string, string, string, string) error
 }
 
@@ -242,6 +246,28 @@ func (c *controller) GetSnapshot(namespace, name string) (*snap.VolumeSnapshot, 
 	return snapshot, nil
 }
 
+func (c *controller) ListSnapshots() ([]*snap.VolumeSnapshot, error) {
+	err := c.snapshotStore.Resync()
+	if err != nil {
+		return nil, fmt.Errorf("Snapshot resync failed: %v", err)
+	}
+	list := c.snapshotStore.List()
+	snapshots := make([]*snap.VolumeSnapshot, 0)
+	errors := make([]string, 0)
+	for _, obj := range list {
+		snapshot, ok := obj.(*snap.VolumeSnapshot)
+		if !ok {
+			errors = append(errors, fmt.Errorf("Failed VolumeSnapshot typecast %v", obj).Error())
+		} else {
+			snapshots = append(snapshots, snapshot)
+		}
+	}
+	if len(errors) != 0 {
+		return snapshots, fmt.Errorf("Finding Snapshot %v failed: %v", strings.Join(errors, ", "))
+	}
+	return snapshots, nil
+}
+
 func (c *controller) SetStsReplica(namespace, name string, replica int) error {
 	patch := fmt.Sprintf(`[{"op":"replace","path":"/spec/replicas","value":%d}]`, replica)
 	_, err := c.clients.KubeClientset.AppsV1().StatefulSets(namespace).
@@ -251,4 +277,61 @@ func (c *controller) SetStsReplica(namespace, name string, replica int) error {
 
 func (c *controller) GetService(namespace, name string) (*core.Service, error) {
 	return c.serviceLister.Services(namespace).Get(name)
+}
+
+func (c *controller) PodsDeleted(sts *apps.StatefulSet) (bool, error) {
+	selector, err := meta.LabelSelectorAsSelector(sts.Spec.Selector)
+	if err != nil {
+		return false, err
+	}
+	pods, err := c.ListPods(selector)
+	if err != nil {
+		glog.Errorf("listing pods for sts %v/%v", sts.Namespace, sts.Name)
+		return false, nil
+	}
+	if len(pods) != 0 {
+		return false, nil
+	}
+	return true, nil
+}
+
+func (c *controller) PodsReady(sts *apps.StatefulSet) (bool, error) {
+	selector, err := meta.LabelSelectorAsSelector(sts.Spec.Selector)
+	if err != nil {
+		return false, err
+	}
+	pods, err := c.ListPods(selector)
+	if err != nil {
+		glog.Errorf("listing pods for sts %v/%v", sts.Namespace, sts.Name)
+		return false, nil
+	}
+	var replicas int
+	if sts.Spec.Replicas == nil {
+		replicas = 1
+	} else {
+		replicas = int(*sts.Spec.Replicas)
+	}
+	if len(pods) != replicas {
+		glog.V(4).Infof("  replicas mismatch %v/%v %v!=%v", sts.Namespace, sts.Name, len(pods), replicas)
+		return false, nil
+	}
+	for _, p := range pods {
+		if p.Status.Phase != core.PodRunning {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
+func (c *controller) PvcsBound(pvcs []*core.PersistentVolumeClaim) bool {
+	for _, pvc := range pvcs {
+		current, err := c.GetPVC(pvc.Namespace, pvc.Name)
+		if err != nil {
+			return false
+		}
+		if current.Status.Phase != core.ClaimBound {
+			return false
+		}
+	}
+	return true
 }

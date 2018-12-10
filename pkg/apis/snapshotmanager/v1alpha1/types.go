@@ -60,6 +60,20 @@ type SnapshotRevertDetails struct {
 	PostPVs     map[string]string `json:"postPVs"`
 }
 
+func (r *SnapshotRevert) AttachSnapshot(pvc *corev1.PersistentVolumeClaim, snap string) *corev1.PersistentVolumeClaim {
+	newClaim := &corev1.PersistentVolumeClaim{}
+	if r.Spec.StsType != nil {
+		newClaim.Spec.StorageClassName = r.Spec.StsType.SnapshotClaimStorageClass
+	}
+	newClaim.Name = pvc.Name
+	newClaim.Labels = pvc.Labels
+	newClaim.Annotations = map[string]string{"snapshot.alpha.kubernetes.io/snapshot": snap}
+	newClaim.Namespace = pvc.Namespace
+	newClaim.Spec.AccessModes = pvc.Spec.AccessModes
+	newClaim.Spec.Resources = pvc.Spec.Resources
+	return newClaim
+}
+
 // +genclient
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 

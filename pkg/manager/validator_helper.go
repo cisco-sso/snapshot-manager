@@ -234,7 +234,7 @@ func (v *validator) createSnapshotPVCs(run *vs.ValidationRun) error {
 		}
 	}
 	if err := wait.PollImmediate(10*time.Second, 10*time.Minute, func() (bool, error) {
-		allBound := v.pvcsBound(run)
+		allBound := v.kube.PvcsBound(pvcToPtr(run.Spec.Objects.Claims))
 		if !allBound {
 			glog.Infof("PVCs not bound for run %v/%v", run.Namespace, run.Name)
 		}
@@ -243,6 +243,14 @@ func (v *validator) createSnapshotPVCs(run *vs.ValidationRun) error {
 		return e("run %v failed init, waiting for pvcs to bound", err, run)
 	}
 	return nil
+}
+
+func pvcToPtr(pvcs []core.PersistentVolumeClaim) []*core.PersistentVolumeClaim {
+	c := make([]*core.PersistentVolumeClaim, 0, len(pvcs))
+	for _, pvc := range pvcs {
+		c = append(c, &pvc)
+	}
+	return c
 }
 
 func (v *validator) createJob(name string, jobSpec *batch.JobSpec, run *vs.ValidationRun) error {
@@ -317,7 +325,7 @@ func (v *validator) createSts(sts *apps.StatefulSet, run *vs.ValidationRun) erro
 		if err := v.kube.CreateStatefulSet(sts); err != nil {
 			return e("creating sts %v", err, sts)
 		}
-		if err := wait.PollImmediate(10*time.Second, 10*time.Minute, func() (bool, error) { return v.podsReady(sts) }); err != nil {
+		if err := wait.PollImmediate(10*time.Second, 10*time.Minute, func() (bool, error) { return v.kube.PodsReady(sts) }); err != nil {
 			return e("waiting for pods ready %v", err, sts)
 		}
 	}
@@ -327,19 +335,6 @@ func (v *validator) createSts(sts *apps.StatefulSet, run *vs.ValidationRun) erro
 func allTrue(m map[string]bool) bool {
 	for _, k := range m {
 		if !k {
-			return false
-		}
-	}
-	return true
-}
-
-func (v *validator) pvcsBound(run *vs.ValidationRun) bool {
-	for _, pvc := range run.Spec.Objects.Claims {
-		current, err := v.kube.GetPVC(pvc.Namespace, pvc.Name)
-		if err != nil {
-			return false
-		}
-		if current.Status.Phase != core.ClaimBound {
 			return false
 		}
 	}
@@ -428,32 +423,4 @@ func (v *validator) createObjects(run *vs.ValidationRun) error {
 		return fmt.Errorf("Unable to create objects [%v]", strings.Join(errors, ", "))
 	}
 	return nil
-}
-
-func (v *validator) podsReady(sts *apps.StatefulSet) (bool, error) {
-	selector, err := meta.LabelSelectorAsSelector(sts.Spec.Selector)
-	if err != nil {
-		return false, err
-	}
-	pods, err := v.kube.ListPods(selector)
-	if err != nil {
-		glog.Errorf("listing pods for sts %v/%v", sts.Namespace, sts.Name)
-		return false, nil
-	}
-	var replicas int
-	if sts.Spec.Replicas == nil {
-		replicas = 1
-	} else {
-		replicas = int(*sts.Spec.Replicas)
-	}
-	if len(pods) != replicas {
-		glog.V(4).Infof("  replicas mismatch %v/%v %v!=%v", sts.Namespace, sts.Name, len(pods), replicas)
-		return false, nil
-	}
-	for _, p := range pods {
-		if p.Status.Phase != core.PodRunning {
-			return false, nil
-		}
-	}
-	return true, nil
 }
