@@ -1,0 +1,10 @@
+apiVersion: snapshotmanager.ciscosso.io/v1alpha1
+kind: SnapshotRevert 
+metadata:
+  name: cassandra-revert
+  namespace: snapshots
+spec:
+  statefulSet:
+    name: cassandra
+    claim: data
+    snapshotClaimStorageClass: snapshot

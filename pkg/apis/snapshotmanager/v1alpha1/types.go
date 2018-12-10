@@ -32,8 +32,15 @@ type SnapshotRevert struct {
 type SnapshotRevertSpec struct {
 	StsType *StatefulSetType `json:"statefulSet,omitempty"`
 
-	Validation *string      `json:"validation,omitempty"`
-	TargetTime *metav1.Time `json:"targetTime,omitempty"`
+	Validation *string              `json:"validation,omitempty"`
+	Action     SnapshotRevertAction `json:"action"`
+}
+
+// SnapshotRevertAction
+type SnapshotRevertAction struct {
+	Type     string       `json:"type"`
+	FromTime *metav1.Time `json:"fromTime,omitempty"`
+	ToTime   *metav1.Time `json:"toTime,omitempty"`
 }
 
 // SnapshotRevertStatus

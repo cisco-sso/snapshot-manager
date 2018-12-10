@@ -18,15 +18,17 @@ import (
 )
 
 type KubeCalls interface {
-	pods
-	services
+	jobs
 	persistentVolumeClaims
 	persistentVolumes
-	jobs
-	validationStrategies
-	validationRuns
+	pods
+	services
+	snapshotReverts
 	snapshots
 	statefulSets
+	validationRuns
+	validationStrategies
+
 	CreateObjectYAML(string) error
 	GetObjectYAML(string, vs.ResourceName) (string, error)
 }
@@ -80,6 +82,10 @@ type statefulSets interface {
 	CreateStatefulSet(*apps.StatefulSet) error
 	GetSts(string, string) (*apps.StatefulSet, error)
 	SetStsReplica(string, string, int) error
+}
+
+type snapshotReverts interface {
+	UpdateRevert(*vs.SnapshotRevert) error
 }
 
 func (c *controller) GetObjectYAML(namespace string, r vs.ResourceName) (string, error) {
@@ -334,4 +340,11 @@ func (c *controller) PvcsBound(pvcs []*core.PersistentVolumeClaim) bool {
 		}
 	}
 	return true
+}
+
+func (c *controller) UpdateRevert(revert *vs.SnapshotRevert) error {
+	_, err := c.clients.SvClientset.SnapshotmanagerV1alpha1().
+		SnapshotReverts(revert.Namespace).
+		Update(revert)
+	return err
 }

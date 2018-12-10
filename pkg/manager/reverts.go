@@ -26,8 +26,8 @@ func NewReverts(kube KubeCalls) Reverts {
 }
 
 func (r *reverts) ProcessSnapshotRevert(revert *vs.SnapshotRevert) error {
-	glog.Infof("processing snapshot revert %v/%v %v\n%v", revert.Namespace, revert.Name, revert.Spec.TargetTime, revert)
-	if revert.Spec.TargetTime != nil {
+	glog.Infof("processing snapshot revert %v/%v", revert.Namespace, revert.Name)
+	if revert.Spec.Action.Type == "latest" {
 		if revert.Spec.StsType != nil {
 			//optionally: validate
 			sts, err := r.kube.GetSts(revert.Namespace, revert.Spec.StsType.Name)
@@ -45,7 +45,7 @@ func (r *reverts) ProcessSnapshotRevert(revert *vs.SnapshotRevert) error {
 			if err != nil {
 				return e("Unable to list PVCs for revert %v", err, revert)
 			}
-			snapshots, err := r.getSnapshots(pvcs, revert.Spec.TargetTime)
+			snapshots, err := r.getSnapshots(pvcs, revert.Spec.Action.FromTime, revert.Spec.Action.ToTime)
 			if err != nil {
 				return e("Unable to create snapshots for revert %v", err, revert)
 			}
@@ -78,26 +78,44 @@ func (r *reverts) ProcessSnapshotRevert(revert *vs.SnapshotRevert) error {
 			}); err != nil {
 				return e("revert %v failed init, waiting for pvcs to bound", err, revert)
 			}
+			revertCopy := revert.DeepCopy()
+			revertCopy.Spec.Action.Type = "idle"
+			return r.kube.UpdateRevert(revertCopy)
 		}
 	}
 	return nil
 }
 
-func (r *reverts) getSnapshots(pvcs []*core.PersistentVolumeClaim, targetTime *meta.Time) (map[string]*snap.VolumeSnapshot, error) {
+func isBetween(pre, target, post *meta.Time) bool {
+	if pre != nil {
+		if pre.Time.After(target.Time) {
+			return false
+		}
+	}
+	if post != nil {
+		if post.Time.Before(target.Time) {
+			return false
+		}
+	}
+	return true
+}
+
+func (r *reverts) getSnapshots(pvcs []*core.PersistentVolumeClaim, fromTime, toTime *meta.Time) (map[string]*snap.VolumeSnapshot, error) {
 	snaps, err := r.kube.ListSnapshots()
 	if err != nil && len(snaps) < len(pvcs) {
 		return nil, e("Failed finding all snapshots for pvcs", err)
 	}
 	snapMap := make(map[string]*snap.VolumeSnapshot)
 	for _, snap := range snaps {
-		if targetTime.Time.After(snap.Metadata.CreationTimestamp.Time) {
-			if prev, ok := snapMap[snap.Spec.PersistentVolumeClaimName]; ok {
-				if snap.Metadata.CreationTimestamp.Time.After(prev.Metadata.CreationTimestamp.Time) {
-					snapMap[snap.Spec.PersistentVolumeClaimName] = snap
-				}
-			} else {
+		if !isBetween(fromTime, &snap.Metadata.CreationTimestamp, toTime) {
+			continue
+		}
+		if prev, ok := snapMap[snap.Spec.PersistentVolumeClaimName]; ok {
+			if snap.Metadata.CreationTimestamp.Time.After(prev.Metadata.CreationTimestamp.Time) {
 				snapMap[snap.Spec.PersistentVolumeClaimName] = snap
 			}
+		} else {
+			snapMap[snap.Spec.PersistentVolumeClaimName] = snap
 		}
 	}
 	m := make(map[string]*snap.VolumeSnapshot)

@@ -131,3 +131,5 @@ items:
       name: cassandra
       claim: data
       snapshotClaimStorageClass: snapshot
+    action:
+      type: idle 
