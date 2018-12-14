@@ -178,7 +178,7 @@ func (c *controller) scheduleValidatorRunDelete(obj interface{}) {
 }
 
 func (c *controller) enqueueSnapshot(obj interface{}) {
-	snapshot, ok := obj.(*snap.VolumeSnapshot)
+	/*snapshot, ok := obj.(*snap.VolumeSnapshot)
 	if !ok {
 		glog.Warningf("expecting type VolumeSnapshot but received type %T", obj)
 		return
@@ -190,7 +190,7 @@ func (c *controller) enqueueSnapshot(obj interface{}) {
 		return
 	} else {
 		c.snapshotWorkqueue.Add(key)
-	}
+	}*/
 }
 
 func (c *controller) Run(threadiness int, stopCh <-chan struct{}) error {

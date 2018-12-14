@@ -34,6 +34,7 @@ type SnapshotRevertSpec struct {
 
 	Validation *string              `json:"validation,omitempty"`
 	Action     SnapshotRevertAction `json:"action"`
+	KeepStatus int                  `json:"keepStatus"`
 }
 
 // SnapshotRevertAction
@@ -60,11 +61,9 @@ type SnapshotRevertList struct {
 
 // SnapshotRevertDetails
 type SnapshotRevertDetails struct {
-	TargetTime  *metav1.Time      `json:"targetTime,omitempty"`
-	PreVolumes  map[string]string `json:"preVolumes"`
-	PrePVs      map[string]string `json:"prePVs"`
-	PostVolumes map[string]string `json:"postVolumes"`
-	PostPVs     map[string]string `json:"postPVs"`
+	State     string                          `json:"state"`
+	Replicas  *int32                          `json:"replicas,omitempty"`
+	OldClaims []*corev1.PersistentVolumeClaim `json:"oldClaims,omitempty"`
 }
 
 func (r *SnapshotRevert) AttachSnapshot(pvc *corev1.PersistentVolumeClaim, snap string) *corev1.PersistentVolumeClaim {
