@@ -269,7 +269,7 @@ func (c *controller) ListSnapshots() ([]*snap.VolumeSnapshot, error) {
 		}
 	}
 	if len(errors) != 0 {
-		return snapshots, fmt.Errorf("Finding Snapshot %v failed: %v", strings.Join(errors, ", "))
+		return snapshots, fmt.Errorf("Finding Snapshots failed for: %v", strings.Join(errors, ", "))
 	}
 	return snapshots, nil
 }
