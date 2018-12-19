@@ -212,6 +212,21 @@ func (c *basicClient) GetJob(namespace, name string) (*batch.Job, error) {
 	}
 	return job, nil
 }
+func (c *basicClient) ListSnapshots() ([]*snap.VolumeSnapshot, error) {
+	return nil, nil
+}
+func (c *basicClient) PodsDeleted(sts *apps.StatefulSet) (bool, error) {
+	return true, nil
+}
+func (c *basicClient) PodsReady(sts *apps.StatefulSet) (bool, error) {
+	return true, nil
+}
+func (c *basicClient) PvcsBound(pvcs []*core.PersistentVolumeClaim) bool {
+	return true
+}
+func (c *basicClient) UpdateRevert(revert *vs.SnapshotRevert) error {
+	return nil
+}
 
 func snapshot(name string) *snap.VolumeSnapshot {
 	s := snap.VolumeSnapshot{}
