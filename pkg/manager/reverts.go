@@ -87,9 +87,25 @@ func (r *reverts) revertSnapshots(revert *vs.SnapshotRevert) error {
 		return e("Unable to required matching snapshots for revert %v", err, revert)
 	}
 	for _, pvc := range details.OldClaims {
-		err := r.kube.DeletePVC(pvc)
+		pv, err := r.kube.GetPV(pvc.Spec.VolumeName)
+		if err != nil {
+			return e("Failed to get pv for pvc %v for revert %v", err, pvc, revert)
+		}
+		err = r.fixReclaimPolicy(pv)
+		if err != nil {
+			return err
+		}
+		err = r.kube.DeletePVC(pvc)
 		if err != nil {
 			return e("Failed to delete pvc %v for revert %v", err, pvc, revert)
+		}
+		pv, err = r.kube.GetPV(pvc.Spec.VolumeName)
+		if err != nil {
+			return e("Failed to get pv for pvc %v for revert %v", err, pvc, revert)
+		}
+		err = r.availablePV(pv)
+		if err != nil {
+			return err
 		}
 	}
 	for _, pvc := range details.OldClaims {
@@ -194,7 +210,7 @@ func (r *reverts) processUndo(revert *vs.SnapshotRevert) error {
 			revert.Status.Reverts = revert.Status.Reverts[:len(revert.Status.Reverts)-1]
 		}
 	}
-	return fmt.Errorf("not implemented")
+	return nil
 }
 
 func (r *reverts) ProcessSnapshotRevert(revert *vs.SnapshotRevert) error {
@@ -264,4 +280,23 @@ func (r *reverts) getSnapshots(pvcs []*core.PersistentVolumeClaim, fromTime, toT
 func setState(revert *vs.SnapshotRevert, state string) {
 	details := &revert.Status.Reverts[len(revert.Status.Reverts)-1]
 	details.State = state
+}
+
+func (r *reverts) availablePV(pv *core.PersistentVolume) error {
+	pv.Spec.ClaimRef = nil
+	pv.Status.Phase = "Available"
+	if err := r.kube.UpdatePV(pv); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (r *reverts) fixReclaimPolicy(pv *core.PersistentVolume) error {
+	if pv.Spec.PersistentVolumeReclaimPolicy != "Retain" {
+		pv.Spec.PersistentVolumeReclaimPolicy = "Retain"
+		if err := r.kube.UpdatePV(pv); err != nil {
+			return err
+		}
+	}
+	return nil
 }

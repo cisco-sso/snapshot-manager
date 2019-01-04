@@ -8,6 +8,7 @@ import (
 	apps "k8s.io/api/apps/v1"
 	batch "k8s.io/api/batch/v1"
 	core "k8s.io/api/core/v1"
+	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	//"k8s.io/apimachinery/pkg/runtime"
@@ -54,6 +55,7 @@ type persistentVolumeClaims interface {
 
 type persistentVolumes interface {
 	GetPV(string) (*core.PersistentVolume, error)
+	UpdatePV(*core.PersistentVolume) error
 }
 
 type jobs interface {
@@ -151,6 +153,10 @@ func (c *controller) CreatePVC(pvc *core.PersistentVolumeClaim) error {
 }
 
 func (c *controller) DeletePVC(pvc *core.PersistentVolumeClaim) error {
+	_, err := c.pvcLister.PersistentVolumeClaims(pvc.Namespace).Get(pvc.Name)
+	if kerrors.IsNotFound(err) {
+		return nil
+	}
 	return c.clients.KubeClientset.CoreV1().
 		PersistentVolumeClaims(pvc.Namespace).
 		Delete(pvc.Name, &meta.DeleteOptions{})
@@ -223,6 +229,12 @@ func (c *controller) GetPVC(namespace, name string) (*core.PersistentVolumeClaim
 
 func (c *controller) GetPV(name string) (*core.PersistentVolume, error) {
 	return c.pvLister.Get(name)
+}
+func (c *controller) UpdatePV(pv *core.PersistentVolume) error {
+	_, err := c.clients.KubeClientset.CoreV1().
+		PersistentVolumes().
+		Update(pv)
+	return err
 }
 
 func (c *controller) GetJob(namespace, name string) (*batch.Job, error) {
