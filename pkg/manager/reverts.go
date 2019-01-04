@@ -186,6 +186,8 @@ func (r *reverts) processLatest(revert *vs.SnapshotRevert) error {
 			return r.revertSnapshots(revert)
 		case "reverted":
 			return r.unpause(revert)
+		default:
+			return fmt.Errorf("Unknown state '%v' for processing 'latest' action in revert %v/%v", details.State, revert.Namespace, revert.Name)
 		}
 	}
 	return nil
@@ -203,11 +205,13 @@ func (r *reverts) processUndo(revert *vs.SnapshotRevert) error {
 			return r.pause(revert)
 		case "paused":
 			return r.undoRevertSnapshots(revert)
-		case "reverted":
+		case "undone":
 			if err := r.unpause(revert); err != nil {
 				return err
 			}
 			revert.Status.Reverts = revert.Status.Reverts[:len(revert.Status.Reverts)-1]
+		default:
+			return fmt.Errorf("Unknown state '%v' for processing 'undo' action in revert %v/%v", details.State, revert.Namespace, revert.Name)
 		}
 	}
 	return nil
