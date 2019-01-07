@@ -139,7 +139,7 @@ func (v *validator) validation(run *vs.ValidationRun) error {
 		if err != nil {
 			return fmt.Errorf("failed getting volume id for PV %v, PVC %v and run %v/%v", pv.Name, pvc.Name, run.Namespace, run.Name)
 		}
-		if err = v.kube.LabelSnapshot(s.Metadata.Namespace, s.Metadata.Name, label, id); err != nil {
+		if err = v.kube.LabelSnapshot(s.Metadata.Namespace, s.Metadata.Name, label, sanitizeLabel(id)); err != nil {
 			return e("labeling snapshot %v for run %v", err, s, run)
 		}
 	}

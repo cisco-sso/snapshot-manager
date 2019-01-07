@@ -15,8 +15,13 @@ import (
 	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/apimachinery/pkg/util/wait"
 	kcache "k8s.io/client-go/tools/cache"
+	"regexp"
 	"strings"
 	"time"
+)
+
+var (
+	sanitizeLabelRe = regexp.MustCompile("[^A-Za-z0-9]+")
 )
 
 func (v *validator) updateRun(run *vs.ValidationRun, snapshot *snap.VolumeSnapshot, new bool) error {
@@ -322,6 +327,10 @@ func allTrue(m map[string]bool) bool {
 		}
 	}
 	return true
+}
+
+func sanitizeLabel(pvid string) string {
+	return sanitizeLabelRe.ReplaceAllString(pvid, "-")
 }
 
 func getId(pv *core.PersistentVolume) (string, string, error) {
