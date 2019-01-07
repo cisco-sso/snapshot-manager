@@ -21,6 +21,11 @@ import (
 	"sigs.k8s.io/kustomize/pkg/patch"
 )
 
+const (
+	KustomizationVersion = "v1beta1"
+	KustomizationKind    = "Kustomization"
+)
+
 // TypeMeta copies apimachinery/pkg/apis/meta/v1.TypeMeta
 type TypeMeta struct {
 	// Kind copies apimachinery/pkg/apis/meta/v1.Typemeta.Kind
@@ -41,6 +46,10 @@ type Kustomization struct {
 	// NamePrefix will prefix the names of all resources mentioned in the kustomization
 	// file including generated configmaps and secrets.
 	NamePrefix string `json:"namePrefix,omitempty" yaml:"namePrefix,omitempty"`
+
+	// NameSuffix will suffix the names of all resources mentioned in the kustomization
+	// file including generated configmaps and secrets.
+	NameSuffix string `json:"nameSuffix,omitempty" yaml:"nameSuffix,omitempty"`
 
 	// Namespace to add to all objects.
 	Namespace string `json:"namespace,omitempty" yaml:"namespace,omitempty"`
@@ -116,6 +125,9 @@ type Kustomization struct {
 	// GeneratorOptions modify behavior of all ConfigMap and Secret generators.
 	GeneratorOptions *GeneratorOptions `json:"generatorOptions,omitempty" yaml:"generatorOptions,omitempty"`
 
+	// Configurations is a list of transformer configuration files
+	Configurations []string `json:"configurations,omitempty" yaml:"configurations,omitempty"`
+
 	//
 	// Deprecated fields - See DealWithDeprecatedFields
 	//
@@ -139,18 +151,56 @@ func (k *Kustomization) DealWithDeprecatedFields() {
 	}
 }
 
-// ConfigMapArgs contains the metadata of how to generate a configmap.
-type ConfigMapArgs struct {
-	// Name of the configmap.
-	// The full name should be Kustomization.NamePrefix + Configmap.Name +
-	// hash(content of configmap).
+// DealWithMissingFields fills the missing fields
+func (k *Kustomization) DealWithMissingFields() []string {
+	var msgs []string
+	if k.APIVersion == "" {
+		k.APIVersion = KustomizationVersion
+		msgs = append(msgs, "Fixed the missing field by adding apiVersion: "+KustomizationVersion)
+	}
+	if k.Kind == "" {
+		k.Kind = KustomizationKind
+		msgs = append(msgs, "Fixed the missing field by adding kind: "+KustomizationKind)
+	}
+	return msgs
+}
+
+func (k *Kustomization) EnforceFields() ([]string, []string) {
+	var msgs, errs []string
+	if k.APIVersion == "" {
+		msgs = append(msgs, "apiVersion is not defined. This will not be allowed in the next release.\nPlease run `kustomize edit fix`")
+	} else if k.APIVersion != KustomizationVersion {
+		errs = append(errs, "apiVersion should be "+KustomizationVersion)
+	}
+	if k.Kind == "" {
+		msgs = append(msgs, "kind is not defined. This will not be allowed in the next release.\nPlease run `kustomize edit fix`")
+	} else if k.Kind != KustomizationKind {
+		errs = append(errs, "kind should be "+KustomizationKind)
+	}
+	return msgs, errs
+}
+
+// GeneratorArgs contains arguments common to generators.
+type GeneratorArgs struct {
+	// Namespace for the configmap, optional
+	Namespace string `json:"namespace,omitempty" yaml:"namespace,omitempty"`
+
+	// Name - actually the partial name - of the generated resource.
+	// The full name ends up being something like
+	// NamePrefix + this.Name + hash(content of generated resource).
 	Name string `json:"name,omitempty" yaml:"name,omitempty"`
 
-	// behavior of configmap, must be one of create, merge and replace
-	// 'create': create a new one;
-	// 'replace': replace the existing one;
-	// 'merge': merge the existing one.
+	// Behavior of generated resource, must be one of:
+	//   'create': create a new one
+	//   'replace': replace the existing one
+	//   'merge': merge with the existing one
 	Behavior string `json:"behavior,omitempty" yaml:"behavior,omitempty"`
+}
+
+// ConfigMapArgs contains the metadata of how to generate a configmap.
+type ConfigMapArgs struct {
+	// GeneratorArgs for the configmap.
+	GeneratorArgs `json:",inline,omitempty" yaml:",inline,omitempty"`
 
 	// DataSources for configmap.
 	DataSources `json:",inline,omitempty" yaml:",inline,omitempty"`
@@ -158,16 +208,8 @@ type ConfigMapArgs struct {
 
 // SecretArgs contains the metadata of how to generate a secret.
 type SecretArgs struct {
-	// Name of the secret.
-	// The full name should be Kustomization.NamePrefix + SecretGenerator.Name +
-	// hash(content of secret).
-	Name string `json:"name,omitempty" yaml:"name,omitempty"`
-
-	// behavior of secretGenerator, must be one of create, merge and replace
-	// 'create': create a new one;
-	// 'replace': replace the existing one;
-	// 'merge': merge the existing one.
-	Behavior string `json:"behavior,omitempty" yaml:"behavior,omitempty"`
+	// GeneratorArgs for the secret.
+	GeneratorArgs `json:",inline,omitempty" yaml:",inline,omitempty"`
 
 	// Type of the secret.
 	//

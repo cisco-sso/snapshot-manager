@@ -18,7 +18,6 @@ package build
 
 import (
 	"io"
-	"strings"
 
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
@@ -28,13 +27,11 @@ import (
 	"sigs.k8s.io/kustomize/pkg/loader"
 	"sigs.k8s.io/kustomize/pkg/resmap"
 	"sigs.k8s.io/kustomize/pkg/target"
-	"sigs.k8s.io/kustomize/pkg/transformers/config"
 )
 
 type buildOptions struct {
-	kustomizationPath      string
-	outputPath             string
-	transformerconfigPaths []string
+	kustomizationPath string
+	outputPath        string
 }
 
 func NewBuildOptions(path string) buildOptions {
@@ -54,11 +51,6 @@ url examples:
   sigs.k8s.io/kustomize//examples/multibases?ref=v1.0.6
   github.com/Liujingfang1/mysql
   github.com/Liujingfang1/kustomize//examples/helloWorld?ref=repoUrl2
-
-Advanced usage:
-Use different transformer configurations by passing files to kustomize
-    build somedir -t someconfigdir
-    build somedir -t some-transformer-configfile,another-transformer-configfile
 `
 
 // NewCmdBuild creates a new build command.
@@ -67,7 +59,6 @@ func NewCmdBuild(
 	rf *resmap.Factory,
 	ptf transformer.Factory) *cobra.Command {
 	var o buildOptions
-	var p string
 
 	cmd := &cobra.Command{
 		Use:          "build [path]",
@@ -75,7 +66,7 @@ func NewCmdBuild(
 		Example:      examples,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			err := o.Validate(args, p, fs)
+			err := o.Validate(args)
 			if err != nil {
 				return err
 			}
@@ -86,15 +77,11 @@ func NewCmdBuild(
 		&o.outputPath,
 		"output", "o", "",
 		"If specified, write the build output to this path.")
-	cmd.Flags().StringVarP(
-		&p,
-		"transformer-config", "t", "",
-		"If specified, use the transformer configs load from these files.")
 	return cmd
 }
 
 // Validate validates build command.
-func (o *buildOptions) Validate(args []string, p string, fs fs.FileSystem) error {
+func (o *buildOptions) Validate(args []string) error {
 	if len(args) > 1 {
 		return errors.New("specify one path to " + constants.KustomizationFileName)
 	}
@@ -102,20 +89,6 @@ func (o *buildOptions) Validate(args []string, p string, fs fs.FileSystem) error
 		o.kustomizationPath = "./"
 	} else {
 		o.kustomizationPath = args[0]
-	}
-
-	if p == "" {
-		return nil
-	}
-
-	if fs.IsDir(p) {
-		paths, err := fs.Glob(p + "/*")
-		if err != nil {
-			return err
-		}
-		o.transformerconfigPaths = paths
-	} else {
-		o.transformerconfigPaths = strings.Split(p, ",")
 	}
 
 	return nil
@@ -129,12 +102,8 @@ func (o *buildOptions) RunBuild(
 	if err != nil {
 		return err
 	}
-	tc, err := makeTransformerconfig(fSys, o.transformerconfigPaths)
-	if err != nil {
-		return err
-	}
 	defer ldr.Cleanup()
-	kt, err := target.NewKustTarget(ldr, fSys, rf, ptf, tc)
+	kt, err := target.NewKustTarget(ldr, fSys, rf, ptf)
 	if err != nil {
 		return err
 	}
@@ -152,14 +121,4 @@ func (o *buildOptions) RunBuild(
 	}
 	_, err = out.Write(res)
 	return err
-}
-
-// makeTransformerConfig returns a complete TransformerConfig object from either files
-// or the default configs
-func makeTransformerconfig(
-	fSys fs.FileSystem, paths []string) (*config.TransformerConfig, error) {
-	if paths == nil || len(paths) == 0 {
-		return config.NewFactory(nil).DefaultConfig(), nil
-	}
-	return config.NewFactory(loader.NewFileLoaderAtCwd(fSys)).FromFiles(paths)
 }

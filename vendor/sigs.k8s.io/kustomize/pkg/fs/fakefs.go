@@ -19,9 +19,10 @@ package fs
 import (
 	"fmt"
 	"path/filepath"
-	"sigs.k8s.io/kustomize/pkg/constants"
 	"sort"
 	"strings"
+
+	"sigs.k8s.io/kustomize/pkg/constants"
 )
 
 var _ FileSystem = &fakeFs{}
@@ -39,7 +40,10 @@ func MakeFakeFS() *fakeFs {
 }
 
 // kustomizationContent is used in tests.
-const kustomizationContent = `namePrefix: some-prefix
+const kustomizationContent = `apiVersion: v1beta1
+kind: Kustomization
+namePrefix: some-prefix
+nameSuffix: some-suffix
 # Labels to add to all objects and selectors.
 # These labels would also be used to form the selector for apply --prune
 # Named differently than “labels” to avoid confusion with metadata for this object
@@ -73,6 +77,21 @@ func (fs *fakeFs) Mkdir(name string) error {
 // MkdirAll delegates to Mkdir
 func (fs *fakeFs) MkdirAll(name string) error {
 	return fs.Mkdir(name)
+}
+
+// RemoveAll presumably does rm -r on a path.
+// There's no error.
+func (fs *fakeFs) RemoveAll(name string) error {
+	var toRemove []string
+	for k := range fs.m {
+		if strings.HasPrefix(k, name) {
+			toRemove = append(toRemove, k)
+		}
+	}
+	for _, k := range toRemove {
+		delete(fs.m, k)
+	}
+	return nil
 }
 
 // Open returns a fake file in the open state.

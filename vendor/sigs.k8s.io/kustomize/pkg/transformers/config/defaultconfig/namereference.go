@@ -150,6 +150,8 @@ nameReference:
     kind: Deployment
   - path: spec/template/spec/imagePullSecrets/name
     kind: Deployment
+  - path: spec/template/spec/volumes/projected/sources/secret/name
+    kind: Deployment
   - path: spec/template/spec/volumes/secret/secretName
     kind: ReplicaSet
   - path: spec/template/spec/containers/env/valueFrom/secretKeyRef/name
@@ -186,6 +188,8 @@ nameReference:
     kind: StatefulSet
   - path: spec/template/spec/imagePullSecrets/name
     kind: StatefulSet
+  - path: spec/template/spec/volumes/projected/sources/secret/name
+    kind: StatefulSet
   - path: spec/template/spec/volumes/secret/secretName
     kind: Job
   - path: spec/template/spec/containers/env/valueFrom/secretKeyRef/name
@@ -198,7 +202,7 @@ nameReference:
     kind: Job
   - path: spec/template/spec/imagePullSecrets/name
     kind: Job
-  - path: spec/jobTemplate/spec/template/sepc/volumes/secret/secretName
+  - path: spec/jobTemplate/spec/template/spec/volumes/secret/secretName
     kind: CronJob
   - path: spec/jobTemplate/spec/template/spec/containers/env/valueFrom/secretKeyRef/name
     kind: CronJob
@@ -226,6 +230,10 @@ nameReference:
     kind: StorageClass
   - path: parameters/secretRef
     kind: StorageClass
+  - path: rules/resourceNames
+    kind: Role
+  - path: rules/resourceNames
+    kind: ClusterRole
 
 - kind: Service
   version: v1
