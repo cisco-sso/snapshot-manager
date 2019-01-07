@@ -1,0 +1,8 @@
+apiVersion: v1
+data:
+  cloud-config: W2dsb2JhbF0K
+kind: Secret
+metadata:
+  name: cloud-config
+  namespace: snapshots
+type: Opaque

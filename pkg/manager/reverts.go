@@ -7,6 +7,7 @@ import (
 	snap "github.com/kubernetes-incubator/external-storage/snapshot/pkg/apis/crd/v1"
 	core "k8s.io/api/core/v1"
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"time"
 )
@@ -84,7 +85,7 @@ func (r *reverts) revertSnapshots(revert *vs.SnapshotRevert) error {
 	details := &revert.Status.Reverts[len(revert.Status.Reverts)-1]
 	snapshots, err := r.getSnapshots(details.OldClaims, revert.Spec.Action.FromTime, revert.Spec.Action.ToTime)
 	if err != nil {
-		return e("Unable to required matching snapshots for revert %v", err, revert)
+		return e("Unable to find required matching snapshots for revert %v", err, revert)
 	}
 	for _, pvc := range details.OldClaims {
 		pv, err := r.kube.GetPV(pvc.Spec.VolumeName)
@@ -173,8 +174,110 @@ func (r *reverts) unpause(revert *vs.SnapshotRevert) error {
 	return nil
 }
 
+func (r *reverts) missingValidation(revert *vs.SnapshotRevert) bool {
+	if revert.Spec.Validation == nil || *revert.Spec.Validation == "" {
+		return false
+	}
+	len := len(revert.Status.Reverts)
+	if len == 0 || revert.Status.Reverts[len-1].State != "init" {
+		return false
+	}
+
+	validation, err := r.kube.GetStrategy(revert.Namespace, *revert.Spec.Validation)
+	if err != nil {
+		return true
+	}
+	run, err := r.kube.MatchRun(validation)
+	if err != nil {
+		return true
+	}
+	if run == nil {
+		return true
+	}
+	if run.Status.ValidationFinished == nil {
+		return true
+	}
+	return false
+}
+
+func (r *reverts) runValidation(revert *vs.SnapshotRevert) error {
+	validation, err := r.kube.GetStrategy(revert.Namespace, *revert.Spec.Validation)
+	if err != nil {
+		return e("Unable to get validation %v for revert %v", err, revert.Spec.Validation, revert)
+	}
+	run, err := r.kube.MatchRun(validation)
+	if err != nil {
+		return e("Unable to match validation %v for revert %v", err, revert.Spec.Validation, revert)
+	}
+	if run == nil {
+		run, err = r.initRun(validation, revert)
+		if err != nil {
+			return e("Unable to init run for revert %v", err, revert)
+		}
+		err := r.kube.CreateValidationRun(run)
+		if err != nil {
+			return e("Unable to create run for revert %v", err, revert)
+		}
+	}
+	if err := wait.PollImmediate(10*time.Second, 10*time.Minute,
+		func() (bool, error) {
+			runp, errp := r.kube.GetRun(run.Namespace, run.Name)
+			if errp != nil {
+				return false, errp
+			}
+			return runp.Status.ValidationFinished != nil, nil
+		}); err != nil {
+		return e("waiting for validation run %v", err, run)
+	}
+
+	run, err = r.kube.GetRun(run.Namespace, run.Name)
+	if err != nil {
+		return e("Unable to find validation run %v for revert %v", err, run, revert)
+	}
+	runCopy := run.DeepCopy()
+	runCopy.Spec.Cleanup = true
+	if err = r.kube.UpdateValidationRun(runCopy); err != nil {
+		return e("Unable to update validation run %v for revert %v", err, run, revert)
+	}
+	return nil
+}
+
+func (r *reverts) initRun(strategy *vs.ValidationStrategy, revert *vs.SnapshotRevert) (*vs.ValidationRun, error) {
+	details := &revert.Status.Reverts[len(revert.Status.Reverts)-1]
+	snapshots, err := r.getSnapshots(details.OldClaims, revert.Spec.Action.FromTime, revert.Spec.Action.ToTime)
+	if err != nil {
+		return nil, e("Unable to find required matching snapshots for revert %v", err, revert)
+	}
+	pvcs := make(map[string]string)
+	for pvc, snap := range snapshots {
+		pvcs[pvc] = snap.Metadata.Name
+	}
+	run := &vs.ValidationRun{
+		Spec: vs.ValidationRunSpec{
+			ClaimsToSnapshots: pvcs,
+		},
+		Status: vs.ValidationRunStatus{},
+	}
+	run.Spec.Suffix = string(uuid.NewUUID())
+	run.Name = strategy.Name + "-" + run.Spec.Suffix
+	run.Namespace = strategy.Namespace
+	run.OwnerReferences = []meta.OwnerReference{{
+		UID:                strategy.UID,
+		APIVersion:         "snapshotmanager.ciscosso.io/v1alpha1",
+		Kind:               "ValidationStrategy",
+		Name:               strategy.Name,
+		BlockOwnerDeletion: &block,
+	}}
+	return run, nil
+}
+
 func (r *reverts) processLatest(revert *vs.SnapshotRevert) error {
 	glog.V(4).Infof("processing snapshot revert %v/%v with action type 'latest'", revert.Namespace, revert.Name)
+	if r.missingValidation(revert) {
+		if err := r.runValidation(revert); err != nil {
+			return e("Failed validation for revert %v", err, revert)
+		}
+	}
 	if revert.Spec.StsType != nil {
 		details := initDetails(revert)
 		switch details.State {

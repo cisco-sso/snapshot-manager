@@ -65,13 +65,16 @@ type jobs interface {
 
 type validationStrategies interface {
 	ListStrategies() ([]*vs.ValidationStrategy, error)
+	GetStrategy(string, string) (*vs.ValidationStrategy, error)
 }
 
 type validationRuns interface {
 	ListRuns() ([]*vs.ValidationRun, error)
+	GetRun(string, string) (*vs.ValidationRun, error)
 	CreateValidationRun(*vs.ValidationRun) error
 	UpdateValidationRun(*vs.ValidationRun) error
 	DeleteValidationRun(*vs.ValidationRun) error
+	MatchRun(*vs.ValidationStrategy) (*vs.ValidationRun, error)
 }
 
 type snapshots interface {
@@ -244,6 +247,20 @@ func (c *controller) GetJob(namespace, name string) (*batch.Job, error) {
 	return c.jobLister.Jobs(namespace).Get(name)
 }
 
+func (c *controller) GetStrategy(namespace, name string) (*vs.ValidationStrategy, error) {
+	if err := c.vsInformer.GetStore().Resync(); err != nil {
+		return nil, e("Failed to resync vsInformer store", err)
+	}
+	return c.vsLister.ValidationStrategies(namespace).Get(name)
+}
+
+func (c *controller) GetRun(namespace, name string) (*vs.ValidationRun, error) {
+	if err := c.vrInformer.GetStore().Resync(); err != nil {
+		return nil, e("Failed to resync vrInformer store", err)
+	}
+	return c.vrLister.ValidationRuns(namespace).Get(name)
+}
+
 func (c *controller) GetSts(namespace, name string) (*apps.StatefulSet, error) {
 	return c.stsLister.StatefulSets(namespace).Get(name)
 }
@@ -359,4 +376,21 @@ func (c *controller) UpdateRevert(revert *vs.SnapshotRevert) error {
 		SnapshotReverts(revert.Namespace).
 		Update(revert)
 	return err
+}
+
+func (c *controller) MatchRun(strategy *vs.ValidationStrategy) (*vs.ValidationRun, error) {
+	//TODO: implement as InformerIndexer
+	runs, err := c.ListRuns()
+	if err != nil {
+		return nil, err
+	}
+	glog.V(4).Infof("matching run for strategy %v/%v, from %v runs", strategy.Namespace, strategy.Name, len(runs))
+	for _, r := range runs {
+		for _, ref := range r.OwnerReferences {
+			if ref.UID == strategy.UID {
+				return r.DeepCopy(), nil
+			}
+		}
+	}
+	return nil, nil
 }

@@ -95,23 +95,6 @@ func (v *validator) getLabelSelector(strategy *vs.ValidationStrategy) (labels.Se
 	return nil, fmt.Errorf("unknown strategy type")
 }
 
-func (v *validator) matchRun(strategy *vs.ValidationStrategy) (*vs.ValidationRun, error) {
-	//TODO: implement as InformerIndexer
-	runs, err := v.kube.ListRuns()
-	if err != nil {
-		return nil, err
-	}
-	glog.V(4).Infof("matching run for strategy %v/%v, from %v runs", strategy.Namespace, strategy.Name, len(runs))
-	for _, r := range runs {
-		for _, ref := range r.OwnerReferences {
-			if ref.UID == strategy.UID {
-				return r.DeepCopy(), nil
-			}
-		}
-	}
-	return nil, nil
-}
-
 func keys(keys map[string]core.PersistentVolumeClaim) map[string]string {
 	m := make(map[string]string)
 	for k, _ := range keys {
@@ -154,7 +137,7 @@ func (v *validator) initRun(strategy *vs.ValidationStrategy) (*vs.ValidationRun,
 		UID:                strategy.UID,
 		APIVersion:         "snapshotmanager.ciscosso.io/v1alpha1",
 		Kind:               "ValidationStrategy",
-		Name:               "cassandra",
+		Name:               strategy.Name,
 		BlockOwnerDeletion: &block,
 	}}
 	glog.V(4).Infof("init run %v/%v from strategy - %#v", run.Namespace, run.Name, strategy)
@@ -186,7 +169,7 @@ func (v *validator) getStrategyForSnapshot(snapshot *snap.VolumeSnapshot) (*vs.V
 
 func (v *validator) getRunForStrategy(strategy *vs.ValidationStrategy) (*vs.ValidationRun, bool, error) {
 	new, failed := true, false
-	run, err := v.matchRun(strategy)
+	run, err := v.kube.MatchRun(strategy)
 	if err != nil {
 		return nil, failed, err
 	}

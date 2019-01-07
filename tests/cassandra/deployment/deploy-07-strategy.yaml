@@ -4,7 +4,7 @@ metadata:
   name: cassandra
   namespace: snapshots
 spec:
-  autoTrigger: true
+  autoTrigger: false
   statefulSet:
     name: cassandra
     claim: data
