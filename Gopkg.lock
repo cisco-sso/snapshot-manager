@@ -526,7 +526,7 @@
   version = "kubernetes-1.13.1"
 
 [[projects]]
-  digest = "1:df1346a2aef9edd12bdc804162f69b589bdd42a4b2c670aca0698ffbccbd0ca2"
+  digest = "1:6eac390d0f46c3916825ccd4fa293aeebdf6d318ecd38d5294e10049bef408fb"
   name = "k8s.io/client-go"
   packages = [
     "discovery",
@@ -647,6 +647,7 @@
     "plugin/pkg/client/auth/exec",
     "rest",
     "rest/watch",
+    "restmapper",
     "testing",
     "tools/auth",
     "tools/cache",
@@ -822,6 +823,7 @@
     "k8s.io/client-go/listers/batch/v1",
     "k8s.io/client-go/listers/core/v1",
     "k8s.io/client-go/rest",
+    "k8s.io/client-go/restmapper",
     "k8s.io/client-go/testing",
     "k8s.io/client-go/tools/cache",
     "k8s.io/client-go/tools/clientcmd",
