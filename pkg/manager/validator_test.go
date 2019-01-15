@@ -8,6 +8,7 @@ import (
 	batch "k8s.io/api/batch/v1"
 	core "k8s.io/api/core/v1"
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/labels"
 	"strings"
 	"testing"
@@ -62,29 +63,54 @@ func (c *basicClient) GetSts(string, string) (*apps.StatefulSet, error) {
 	return &sts, nil
 }
 func (c *basicClient) GetService(string, string) (*core.Service, error) {
-	return nil, fmt.Errorf("not implemented")
+	return nil, fmt.Errorf("GetService not implemented")
+}
+func (c *basicClient) GetRun(namespace, name string) (*vs.ValidationRun, error) {
+	for _, r := range c.validationRuns {
+		if r.Name == name {
+			return r, nil
+		}
+	}
+	return nil, fmt.Errorf("run %v/%v not found", namespace, name)
+}
+func (c *basicClient) GetStrategy(string, string) (*vs.ValidationStrategy, error) {
+	return nil, fmt.Errorf("GetStrategy not implemented")
 }
 
-func (c *basicClient) CreateObjectYAML(string) error {
+func (c *basicClient) CreateUnstructuredObject(unstructured.Unstructured) error {
 	return nil
 }
-func (c *basicClient) GetObjectYAML(ns string, r vs.ResourceName) (string, error) {
-	yaml := "kind: " + r.Kind + "\n" +
-		"apiVersion: " + r.Version + "\n" +
-		"metadata:\n" +
-		"  name: " + r.Name + "\n" +
-		"  namespace: " + ns + "\n"
-	return yaml, nil
+func (c *basicClient) MatchRun(strategy *vs.ValidationStrategy) (*vs.ValidationRun, error) {
+	for _, r := range c.validationRuns {
+		for _, ref := range r.OwnerReferences {
+			if ref.Name == strategy.Name {
+				return r, nil
+			}
+		}
+	}
+	return nil, nil
+}
+func (c *basicClient) UpdatePV(pv *core.PersistentVolume) error {
+	return fmt.Errorf("UpdatePV not implemented")
+}
+func (c *basicClient) GetUnstructuredObject(ns string, r vs.ResourceName) (*unstructured.Unstructured, error) {
+	u := &unstructured.Unstructured{}
+	u.SetKind(r.Kind)
+	u.SetName(r.Name)
+	u.SetNamespace(ns)
+	u.SetAPIVersion(r.Version)
+
+	return u, nil
 }
 func (c *basicClient) SetStsReplica(string, string, int) error {
-	return fmt.Errorf("not implemented")
+	return fmt.Errorf("SetStsReplica not implemented")
 }
 func (c *basicClient) DeletePVC(pvc *core.PersistentVolumeClaim) error {
 	delete(c.pvcs, pvc.Name)
 	return nil
 }
 func (c *basicClient) DeleteValidationRun(*vs.ValidationRun) error {
-	return fmt.Errorf("not implemented")
+	return fmt.Errorf("DeleteValidationRun not implemented")
 }
 func (c *basicClient) GetPV(name string) (*core.PersistentVolume, error) {
 	pv := core.PersistentVolume{}
