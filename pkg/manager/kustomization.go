@@ -12,10 +12,6 @@ import (
 	"sigs.k8s.io/kustomize/pkg/patch"
 	kust "sigs.k8s.io/kustomize/pkg/types"
 	"strings"
-	//"sigs.k8s.io/kustomize/k8sdeps/kunstruct"
-	//"sigs.k8s.io/kustomize/pkg/ifc/transformer"
-	//"sigs.k8s.io/kustomize/pkg/resmap"
-	//"sigs.k8s.io/kustomize/pkg/resource"
 )
 
 func (v *validator) getYamlObjectMap(strategy *vs.ValidationStrategy) (map[string]string, error) {
