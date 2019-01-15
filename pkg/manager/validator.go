@@ -13,7 +13,6 @@ import (
 var (
 	// treat as constants
 	block = true
-	zero  = 0
 )
 
 type validator struct {

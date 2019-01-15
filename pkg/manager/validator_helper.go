@@ -6,9 +6,9 @@ import (
 	"github.com/ghodss/yaml"
 	"github.com/golang/glog"
 	snap "github.com/kubernetes-incubator/external-storage/snapshot/pkg/apis/crd/v1"
-	apps "k8s.io/api/apps/v1"
 	batch "k8s.io/api/batch/v1"
 	core "k8s.io/api/core/v1"
+	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/labels"
@@ -98,14 +98,6 @@ func (v *validator) getLabelSelector(strategy *vs.ValidationStrategy) (labels.Se
 		return selector, nil
 	}
 	return nil, fmt.Errorf("unknown strategy type")
-}
-
-func keys(keys map[string]core.PersistentVolumeClaim) map[string]string {
-	m := make(map[string]string)
-	for k, _ := range keys {
-		m[k] = ""
-	}
-	return m
 }
 
 func (v *validator) getPVCsMap(strategy *vs.ValidationStrategy) (map[string]string, error) {
@@ -205,10 +197,6 @@ func (v *validator) getStrategyForRun(run *vs.ValidationRun) (*vs.ValidationStra
 
 func (v *validator) createSnapshotPVCs(run *vs.ValidationRun) error {
 	for _, pvc := range run.Spec.Objects.Claims {
-		oldpvc, _ := v.kube.GetPVC(pvc.Namespace, pvc.Name)
-		if oldpvc != nil {
-			continue
-		}
 		pvc.OwnerReferences = []meta.OwnerReference{{
 			UID:                run.UID,
 			APIVersion:         "snapshotmanager.ciscosso.io/v1alpha1",
@@ -217,7 +205,7 @@ func (v *validator) createSnapshotPVCs(run *vs.ValidationRun) error {
 			BlockOwnerDeletion: &block,
 		}}
 		err := v.kube.CreatePVC(&pvc)
-		if err != nil {
+		if err != nil && !kerrors.IsAlreadyExists(err) {
 			return e("creating PVC %v", err, pvc)
 		}
 	}
@@ -244,24 +232,19 @@ func pvcToPtr(pvcs []core.PersistentVolumeClaim) []*core.PersistentVolumeClaim {
 func (v *validator) createJob(name string, jobSpec *batch.JobSpec, run *vs.ValidationRun) error {
 	name = name + "-" + run.Name
 	if jobSpec != nil {
-		oldjob, _ := v.kube.GetJob(run.Namespace, name)
 		var job batch.Job
-		if oldjob != nil {
-			job = *oldjob
-		} else {
-			job.OwnerReferences = []meta.OwnerReference{{
-				UID:                run.UID,
-				APIVersion:         "snapshotmanager.ciscosso.io/v1alpha1",
-				Kind:               "ValidationRun",
-				Name:               run.Name,
-				BlockOwnerDeletion: &block,
-			}}
-			job.Name = name
-			job.Namespace = run.Namespace
-			job.Spec = *jobSpec
-			if err := v.kube.CreateJob(&job); err != nil {
-				return e("creating job %v", err, job)
-			}
+		job.OwnerReferences = []meta.OwnerReference{{
+			UID:                run.UID,
+			APIVersion:         "snapshotmanager.ciscosso.io/v1alpha1",
+			Kind:               "ValidationRun",
+			Name:               run.Name,
+			BlockOwnerDeletion: &block,
+		}}
+		job.Name = name
+		job.Namespace = run.Namespace
+		job.Spec = *jobSpec
+		if err := v.kube.CreateJob(&job); err != nil && !kerrors.IsAlreadyExists(err) {
+			return e("creating job %v", err, job)
 		}
 		if err := wait.PollImmediate(10*time.Second, 10*time.Minute, func() (bool, error) {
 			current, err := v.kube.GetJob(job.Namespace, job.Name)
@@ -275,58 +258,6 @@ func (v *validator) createJob(name string, jobSpec *batch.JobSpec, run *vs.Valid
 		}
 	}
 	return nil
-}
-
-func (v *validator) createService(service *core.Service, run *vs.ValidationRun) error {
-	if service != nil {
-		oldsvc, _ := v.kube.GetService(service.Namespace, service.Name)
-		if oldsvc != nil {
-			return nil
-		}
-		service.OwnerReferences = []meta.OwnerReference{{
-			UID:                run.UID,
-			APIVersion:         "snapshotmanager.ciscosso.io/v1alpha1",
-			Kind:               "ValidationRun",
-			Name:               run.Name,
-			BlockOwnerDeletion: &block,
-		}}
-		if err := v.kube.CreateService(service); err != nil {
-			return e("creating service %v", err, service)
-		}
-	}
-	return nil
-}
-
-func (v *validator) createSts(sts *apps.StatefulSet, run *vs.ValidationRun) error {
-	if sts != nil {
-		oldsts, _ := v.kube.GetSts(sts.Namespace, sts.Name)
-		if oldsts != nil {
-			return nil
-		}
-		sts.OwnerReferences = []meta.OwnerReference{{
-			UID:                run.UID,
-			APIVersion:         "snapshotmanager.ciscosso.io/v1alpha1",
-			Kind:               "ValidationRun",
-			Name:               run.Name,
-			BlockOwnerDeletion: &block,
-		}}
-		if err := v.kube.CreateStatefulSet(sts); err != nil {
-			return e("creating sts %v", err, sts)
-		}
-		if err := wait.PollImmediate(10*time.Second, 10*time.Minute, func() (bool, error) { return v.kube.PodsReady(sts) }); err != nil {
-			return e("waiting for pods ready %v", err, sts)
-		}
-	}
-	return nil
-}
-
-func allTrue(m map[string]bool) bool {
-	for _, k := range m {
-		if !k {
-			return false
-		}
-	}
-	return true
 }
 
 func sanitizeLabel(pvid string) string {
