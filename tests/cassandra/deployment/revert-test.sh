@@ -12,12 +12,12 @@ kubectl create -f deploy-03-statefulset.yaml
 ./deploy-04-snapshot-controllers.bash
 kubectl create -f deploy-05-snapshot-manager.yaml
 echo "waiting, enter to continue"
-read -t 300
+read -t 600
 kubectl delete deployment snapshot-manager
 kubectl create -f manual-deploy-05-job.yaml
 echo "waiting, enter to continue"
-read -t 60
+read -t 90
 kubectl create -f manual-deploy-06-snapshotpolicy.yaml
 echo "waiting, enter to continue"
-read -t 60
+read -t 90
 kubectl create -f manual-deploy-05-job2.yaml

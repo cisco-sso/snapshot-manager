@@ -11,7 +11,7 @@ spec:
     snapshotClaimStorageClass: snapshot
   additionalResources:
   - name: cassandra
-    group: core
+    group: ""
     version: v1
     kind: Service
   kustomization:
@@ -19,11 +19,27 @@ spec:
     commonLabels:
       app: snapshot-cassandra
     patches:
+      patch_svc: |
+        apiVersion: v1
+        kind: Service 
+        metadata:
+          name: cassandra
+          creationTimestamp: null
+          resourceVersion: null
+          selfLink: null
+          uid: null
+        status: null
       patch_sts: |
         apiVersion: apps/v1
         kind: StatefulSet
         metadata:
           name: cassandra
+          creationTimestamp: null
+          generation: null
+          resourceVersion: null
+          selfLink: null
+          uid: null
+        status: null
         spec:
           serviceName: snapshot-cassandra
           template:
@@ -58,12 +74,17 @@ spec:
             image: cassandra:3
             # idempotent step initializing both original and snapshot service
             # creates counter tables if do not already exist
-            command: [ "bash", "-c", "set -x; set -e; 
-              cqlsh cassandra -e \"CREATE KEYSPACE IF NOT EXISTS snapshot_helper WITH REPLICATION = {'class':'SimpleStrategy', 'replication_factor':1}\" ;
-              cqlsh cassandra -e \"CREATE TABLE IF NOT EXISTS snapshot_helper.index_table ( id UUID PRIMARY KEY, count counter );\" ;
-              cqlsh snapshot-cassandra -e \"CREATE KEYSPACE IF NOT EXISTS snapshot_helper WITH REPLICATION = {'class':'SimpleStrategy', 'replication_factor':1}\" ;
-              cqlsh snapshot-cassandra -e \"CREATE TABLE IF NOT EXISTS snapshot_helper.index_table ( id UUID PRIMARY KEY, count counter );\" ;
-              echo initialized"]
+            command: 
+              - bash
+              - -c
+              - |-
+                  set -x
+                  set -e
+                  cqlsh cassandra -e "CREATE KEYSPACE IF NOT EXISTS snapshot_helper WITH REPLICATION = {'class':'SimpleStrategy', 'replication_factor':1}"
+                  cqlsh cassandra -e "CREATE TABLE IF NOT EXISTS snapshot_helper.index_table ( id UUID PRIMARY KEY, count counter )"
+                  cqlsh snapshot-cassandra -e "CREATE KEYSPACE IF NOT EXISTS snapshot_helper WITH REPLICATION = {'class':'SimpleStrategy', 'replication_factor':1}"
+                  cqlsh snapshot-cassandra -e "CREATE TABLE IF NOT EXISTS snapshot_helper.index_table ( id UUID PRIMARY KEY, count counter )" 
+                  echo "initialized"
     preValidation:
       backoffLimit: 0
       template:
@@ -74,9 +95,14 @@ spec:
             image: cassandra:3
             # this should be atomic, only one command that if failed can be safely retried
             # add 1 to the counter in original db
-            command: [ "bash", "-c", "set -x; set -e;
-              cqlsh cassandra -e 'UPDATE snapshot_helper.index_table SET count = count + 1 WHERE id = 6ab09bec-e68e-48d9-a5f8-97e6fb4c9b47' ;
-              echo updated"]
+            command: 
+              - bash
+              - -c
+              - |-
+                  set -x
+                  set -e
+                  cqlsh cassandra -e 'UPDATE snapshot_helper.index_table SET count = count + 1 WHERE id = 6ab09bec-e68e-48d9-a5f8-97e6fb4c9b47'
+                  echo "updated"
     validation:
       template:
         spec:
@@ -87,12 +113,29 @@ spec:
             # actual validation, query original db, where the counter should have been increased for snapshot_helper.index_table in previous step
             # compare to snapshot db, there the counter should be 1 less
             # prior triggering snapshotpolicy, we create 
-            command: [ "bash", "-c", "set -x; set -e; 
-              ORIGINAL=$(cqlsh cassandra -e 'SELECT count FROM snapshot_helper.index_table WHERE id = 6ab09bec-e68e-48d9-a5f8-97e6fb4c9b47;' | awk 'NR==4{print($1)}') ;
-              SNAPSHOT=$(cqlsh snapshot-cassandra -e 'SELECT count FROM snapshot_helper.index_table WHERE id = 6ab09bec-e68e-48d9-a5f8-97e6fb4c9b47;' | awk 'NR==4{print($1)}') ;
-              if [[ $SNAPSHOT == '' ]]; then SNAPSHOT=0; fi ;
-              echo \"$ORIGINAL == $SNAPSHOT+1\" ;
-              if (( ORIGINAL == SNAPSHOT+1 )); then echo success; else echo failed; exit 1; fi ;
-              TEST_O=$(cqlsh cassandra -e 'SELECT count FROM test.test_table WHERE id = aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa' | awk 'NR==4{print($1)}') ;
-              TEST_S=$(cqlsh snapshot-cassandra -e 'SELECT count FROM test.test_table WHERE id = aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa' | awk 'NR==4{print($1)}') ;
-              if [[ $TEST_O != $TEST_S ]]; then echo failed test; exit 1; else echo success test; fi ; "]
+            command:
+              - bash
+              - -c
+              - |-
+                  set -x
+                  set -e
+                  ORIGINAL=$(cqlsh cassandra -e 'SELECT count FROM snapshot_helper.index_table WHERE id = 6ab09bec-e68e-48d9-a5f8-97e6fb4c9b47' | awk 'NR==4{print($1)}')
+                  SNAPSHOT=$(cqlsh snapshot-cassandra -e 'SELECT count FROM snapshot_helper.index_table WHERE id = 6ab09bec-e68e-48d9-a5f8-97e6fb4c9b47' | awk 'NR==4{print($1)}')
+                  if [[ $SNAPSHOT == '' ]]; then
+                    SNAPSHOT=0
+                  fi
+                  echo "$ORIGINAL == $SNAPSHOT+1"
+                  if (( ORIGINAL > SNAPSHOT )); then
+                    echo success
+                  else
+                    echo failed
+                    exit 1
+                  fi
+                  TEST_O=$(cqlsh cassandra -e 'SELECT count FROM test.test_table WHERE id = aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa' | awk 'NR==4{print($1)}')
+                  TEST_S=$(cqlsh snapshot-cassandra -e 'SELECT count FROM test.test_table WHERE id = aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa' | awk 'NR==4{print($1)}')
+                  if [[ $TEST_O != $TEST_S ]]; then
+                    echo failed test
+                    exit 1
+                  else
+                    echo success test
+                  fi

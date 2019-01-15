@@ -1,7 +1,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: dummy-data
+  name: before-snapshot-data
   namespace: snapshots
 spec:
   template:
@@ -10,10 +10,13 @@ spec:
       containers:
       - name: cassandra 
         image: cassandra:3
-        # insert dummy data into dummy table
-        # should contain the same data after snapshot
-        command: [ "bash", "-c", "set -x; set -e; 
-          cqlsh cassandra -e \"CREATE KEYSPACE IF NOT EXISTS test WITH REPLICATION = {'class':'SimpleStrategy', 'replication_factor':1}\" ;
-          cqlsh cassandra -e \"CREATE TABLE IF NOT EXISTS test.test_table ( id UUID PRIMARY KEY, count counter );\" ;
-          cqlsh cassandra -e 'UPDATE test.test_table SET count = count + 1 WHERE id = aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa' ;
-          echo test data inserted"]
+        command: 
+          - bash
+          - -c
+          - |-
+              set -x
+              set -e
+              cqlsh cassandra -e "CREATE KEYSPACE IF NOT EXISTS test WITH REPLICATION = {'class':'SimpleStrategy', 'replication_factor':1}"
+              cqlsh cassandra -e "CREATE TABLE IF NOT EXISTS test.test_table ( id UUID PRIMARY KEY, msg text )"
+              cqlsh cassandra -e "INSERT INTO test.test_table (id, msg) VALUES (aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa, 'before taking snapshot')"
+              echo "test data inserted"
