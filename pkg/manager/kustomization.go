@@ -19,15 +19,23 @@ import (
 )
 
 func (v *validator) getYamlObjectMap(strategy *vs.ValidationStrategy) (map[string]string, error) {
-	yaml := make(map[string]string)
+	yamlMap := make(map[string]string)
 	for _, r := range strategy.GetKustResources() {
-		if obj, err := v.kube.GetObjectYAML(strategy.Namespace, r); err != nil {
+		if obj, err := v.kube.GetUnstructuredObject(strategy.Namespace, r); err != nil {
 			return nil, e("failed to get object %v", err, r.Id())
 		} else {
-			yaml[r.Id()] = obj
+			bytes, err := obj.MarshalJSON()
+			if err != nil {
+				return nil, e("failed to marshal %v", err, r.Id())
+			}
+			yamlBytes, err := yaml.JSONToYAML(bytes)
+			if err != nil {
+				return nil, e("failed to convert json to yaml %v", err, r.Id())
+			}
+			yamlMap[r.Id()] = string(yamlBytes)
 		}
 	}
-	return yaml, nil
+	return yamlMap, nil
 }
 
 func initFakeFs(fsName string, objects map[string]string, kustomization vs.Kustomization) (kustfs.FileSystem, error) {
@@ -96,7 +104,7 @@ func (v *validator) getClaims(run *vs.ValidationRun) (map[string]*core.Persisten
 func (v *validator) kustomize(strategy *vs.ValidationStrategy, run *vs.ValidationRun) error {
 	yaml, err := v.getYamlObjectMap(strategy)
 	if err != nil {
-		return e("failed kustomization", err)
+		return e("failed to get object map", err)
 	}
 	root := "/" + run.Name
 	fs, err := initFakeFs(root, yaml, strategy.Spec.Kustomization)

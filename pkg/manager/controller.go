@@ -12,6 +12,8 @@ import (
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/discovery"
+	"k8s.io/client-go/dynamic"
 	kubeinformers "k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
 	appslisters "k8s.io/client-go/listers/apps/v1"
@@ -27,6 +29,8 @@ type Clients struct {
 	KubeClientset  kubernetes.Interface
 	SnapshotClient *restclient.RESTClient
 	SvClientset    svclientset.Interface
+	Dynamic        dynamic.Interface
+	Discovery      discovery.DiscoveryInterface
 }
 
 type controller struct {
@@ -53,6 +57,7 @@ type controller struct {
 	vrLister        vslister.ValidationRunLister
 	srInformer      kcache.SharedIndexInformer
 	srLister        vslister.SnapshotRevertLister
+	dynamicClient   dynamic.Interface
 
 	snapshotWorkqueue      workqueue.RateLimitingInterface
 	validationRunWorkqueue workqueue.RateLimitingInterface
@@ -88,6 +93,7 @@ func NewController(clients Clients, stopCh <-chan struct{}) *controller {
 		vrLister:        svfac.Snapshotmanager().V1alpha1().ValidationRuns().Lister(),
 		srInformer:      svfac.Snapshotmanager().V1alpha1().SnapshotReverts().Informer(),
 		srLister:        svfac.Snapshotmanager().V1alpha1().SnapshotReverts().Lister(),
+		dynamicClient:   clients.Dynamic,
 
 		snapshotWorkqueue:      workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "VolumeSnapshots"),
 		validationRunWorkqueue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "ValidatorRun"),

@@ -95,7 +95,7 @@ type ValidationStrategy struct {
 func (vs ValidationStrategy) GetKustResources() []ResourceName {
 	var allResources []ResourceName
 	if vs.Spec.StsType != nil {
-		allResources = append(allResources, ResourceName{Kind: "StatefulSet", Name: vs.Spec.StsType.Name})
+		allResources = append(allResources, ResourceName{Group: "apps", Version: "v1", Kind: "StatefulSet", Name: vs.Spec.StsType.Name})
 	}
 	allResources = append(allResources, vs.Spec.AdditionalResources...)
 	return allResources

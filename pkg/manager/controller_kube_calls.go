@@ -10,11 +10,12 @@ import (
 	core "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/labels"
-	//"k8s.io/apimachinery/pkg/runtime"
-	"bytes"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
-	"os/exec"
+	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/restmapper"
 	"strings"
 )
 
@@ -30,8 +31,8 @@ type KubeCalls interface {
 	validationRuns
 	validationStrategies
 
-	CreateObjectYAML(string) error
-	GetObjectYAML(string, vs.ResourceName) (string, error)
+	CreateUnstructuredObject(unstructured.Unstructured) error
+	GetUnstructuredObject(string, vs.ResourceName) (*unstructured.Unstructured, error)
 }
 
 type pods interface {
@@ -93,39 +94,52 @@ type snapshotReverts interface {
 	UpdateRevert(*vs.SnapshotRevert) error
 }
 
-func (c *controller) GetObjectYAML(namespace string, r vs.ResourceName) (string, error) {
-	//TODO: do this intelligently without calling kubectl binary
-	//maybe k8s.io/client-go/rest/config.go
-	//or look at how kubectl does this
-	cmd := exec.Command("kubectl", "get", "-o", "yaml", "-n", namespace, r.Kind, r.Name)
-	stdout := bytes.NewBufferString("")
-	cmd.Stdout = stdout
-	stderr := bytes.NewBufferString("")
-	cmd.Stderr = stderr
-	err := cmd.Run()
+func (c *controller) GetUnstructuredObject(namespace string, r vs.ResourceName) (*unstructured.Unstructured, error) {
+	gvk := schema.GroupVersionKind{r.Group, r.Version, r.Kind}
+	resource, err := c.getResource(gvk)
 	if err != nil {
-		glog.Errorf("Unable to get object from YAML %v: %v: %v", stderr.String(), stdout.String(), r)
-		return "", e("unable to get object from YAML %v", err, stderr.String())
+		return nil, err
 	}
-	return stdout.String(), nil
+	nri := c.dynamicClient.Resource(resource)
+	var ri dynamic.ResourceInterface
+	if namespace != "" {
+		ri = nri.Namespace(namespace)
+	} else {
+		ri = nri
+	}
+	return ri.Get(r.Name, meta.GetOptions{})
 }
 
-func (c *controller) CreateObjectYAML(str string) error {
-	//TODO: do this intelligently without calling kubectl binary
-	//maybe k8s.io/client-go/rest/config.go
-	//or look at how kubectl does this
-	cmd := exec.Command("kubectl", "create", "-f", "-")
-	cmd.Stdin = strings.NewReader(str)
-	stdout := bytes.NewBufferString("")
-	cmd.Stdout = stdout
-	stderr := bytes.NewBufferString("")
-	cmd.Stderr = stderr
-	err := cmd.Run()
+func (c *controller) CreateUnstructuredObject(obj unstructured.Unstructured) error {
+	resource, err := c.getResource(obj.GroupVersionKind())
 	if err != nil {
-		glog.Error("Unable to create object from YAML ", stderr.String(), ", ", stdout.String(), ", ", str)
-		return e("unable to create object from YAML %v", err, stderr.String())
+		return err
+	}
+	nri := c.dynamicClient.Resource(resource)
+	var ri dynamic.ResourceInterface
+	if obj.GetNamespace() != "" {
+		ri = nri.Namespace(obj.GetNamespace())
+	} else {
+		ri = nri
+	}
+	if _, err := ri.Create(&obj, meta.CreateOptions{}); err != nil && !kerrors.IsAlreadyExists(err) {
+		return e("Unable to create object %v", err, obj)
 	}
 	return nil
+}
+
+func (c *controller) getResource(gvk schema.GroupVersionKind) (schema.GroupVersionResource, error) {
+	apiGroupResources, err := restmapper.GetAPIGroupResources(c.clients.Discovery)
+	if err != nil {
+		return schema.GroupVersionResource{}, e("Unable to get API group resources for unstructured %v", err, gvk)
+	}
+	rm := restmapper.NewDiscoveryRESTMapper(apiGroupResources)
+	mapping, err := rm.RESTMappings(gvk.GroupKind(), gvk.Version)
+	if err != nil || len(mapping) < 1 {
+		return schema.GroupVersionResource{}, e("Unable to init rest mapping for unstructured %v", err, gvk)
+	}
+
+	return mapping[0].Resource, nil
 }
 
 func (c *controller) UpdateValidationRun(run *vs.ValidationRun) error {

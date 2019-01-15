@@ -10,7 +10,7 @@ import (
 	batch "k8s.io/api/batch/v1"
 	core "k8s.io/api/core/v1"
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
-	unstructured "k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -385,17 +385,6 @@ func (v *validator) createObjects(run *vs.ValidationRun) error {
 			errors = append(errors, e("Unmarshal yaml %d. %v", err, i, o).Error())
 			continue
 		}
-		r := vs.ResourceName{
-			Group:   u.GroupVersionKind().Group,
-			Kind:    u.GetKind(),
-			Version: u.GetAPIVersion(),
-			Name:    u.GetName(),
-		}
-		oldObject, _ := v.kube.GetObjectYAML(u.GetNamespace(), r)
-		if oldObject != "" {
-			//skip already existing
-			continue
-		}
 		u.SetOwnerReferences([]meta.OwnerReference{{
 			UID:                run.UID,
 			APIVersion:         "snapshotmanager.ciscosso.io/v1alpha1",
@@ -403,12 +392,8 @@ func (v *validator) createObjects(run *vs.ValidationRun) error {
 			Name:               run.Name,
 			BlockOwnerDeletion: &block,
 		}})
-		if json, err := u.MarshalJSON(); err != nil {
-			errors = append(errors, e("Marshal json %d. %v", err, i, u).Error())
-		} else {
-			if err := v.kube.CreateObjectYAML(string(json)); err != nil {
-				errors = append(errors, e("Create object from YAML %d. %v", err, i, string(json)).Error())
-			}
+		if err := v.kube.CreateUnstructuredObject(u); err != nil {
+			errors = append(errors, e("Create object from unstructured %d. %v", err, i, u).Error())
 		}
 	}
 	if len(errors) != 0 {

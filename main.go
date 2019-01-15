@@ -13,6 +13,8 @@ import (
 	svs "github.com/cisco-sso/snapshot-manager/pkg/client/clientset/versioned/scheme"
 	"github.com/cisco-sso/snapshot-manager/pkg/manager"
 	snapshotclient "github.com/kubernetes-incubator/external-storage/snapshot/pkg/client"
+	"k8s.io/client-go/discovery"
+	"k8s.io/client-go/dynamic"
 	"k8s.io/sample-controller/pkg/signals"
 )
 
@@ -59,6 +61,16 @@ func clients() manager.Clients {
 	c.SvClientset, err = svclientset.NewForConfig(kubeconfig)
 	if err != nil {
 		glog.Fatalf("Error building kubernetes snapshot manager client: %v", err)
+	}
+
+	c.Discovery, err = discovery.NewDiscoveryClientForConfig(kubeconfig)
+	if err != nil {
+		glog.Fatalf("Error building kubernetes discovery client: %v", err)
+	}
+
+	c.Dynamic, err = dynamic.NewForConfig(kubeconfig)
+	if err != nil {
+		glog.Fatalf("Error building kubernetes dynamic client: %v", err)
 	}
 
 	utilruntime.Must(svs.AddToScheme(scheme.Scheme))
