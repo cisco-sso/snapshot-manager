@@ -1,0 +1,348 @@
+#!/usr/bin/env bash
+
+if [ -z "${BASH_VERSINFO}" ] || [ -z "${BASH_VERSINFO[0]}" ] || [ ${BASH_VERSINFO[0]} -lt 4 ]; then
+    echo "snapshots plugin requires bash version >= 4, using `which bash`"
+    bash -version
+    exit 1
+fi
+
+set -e
+set -o pipefail
+
+shopt -s extglob
+
+function __snapshot_revert_template() {
+	echo "apiVersion: snapshotmanager.ciscosso.io/v1alpha1
+kind: SnapshotRevert 
+metadata:
+  name: $name
+  namespace: $namespace
+spec:
+  statefulSet:
+    name: $sts
+    claim: $claim
+    snapshotClaimStorageClass: snapshot"
+}
+
+function __snapshot_template() {
+    if [ $force == true ]; then
+        force_annotation='  annotations:
+    snapshot.alpha.kubernetes.io/force: "true"'
+    fi
+    echo "apiVersion: volumesnapshot.external-storage.k8s.io/v1
+kind: VolumeSnapshot
+metadata:
+$force_annotation
+  name: $name-$pvc
+  namespace: $namespace
+spec:
+  persistentVolumeClaimName: $pvc"
+}
+
+function usage_describe() {
+    echo "Needs a resource type and resource name"
+    echo "Resource type:"
+    echo "  statefulset/sts            Show volume snapshots related to a StatefulSet"
+    echo "  persistentvolumeclaim/pvc  Show volume snapshots related to a PersistentVolumeClaim"
+    echo "  pod/po                     Show volume snapshots related to a Pod"
+    echo ""
+    echo "Usage:"
+    echo "  kubectl snapshotmanager describe TYPE NAME"
+}
+
+function usage_undo() {
+    echo "Needs a SnapshotRevert name"
+    echo ""
+    echo "Usage:"
+    echo "  kubectl snapshotmanager undo NAME"
+}
+
+function usage_revert() {
+    echo "Needs a SnapshotRevert name"
+    echo ""
+    echo "Usage:"
+    echo "  kubectl snapshotmanager revert NAME"
+}
+
+function usage_create() {
+    echo "Needs a name and point to already existing resource type and its name"
+    echo ""
+    echo "Examples:"
+    echo "  # Create snapshots for all PVCs in particular StatefulSet with name prefix snap1"
+    echo "  kubectl snapshotmanager create snapshot --sts=mysts snap1"
+    echo ""
+    echo "  # Create snapshots revert object for particular StatefulSet used for 'kubectl snapshotmanager revert cass-revert'"
+    echo "  kubectl snapshotmanager create snapshotrevert --sts=mysts cass-revert"
+    echo ""
+    echo "Usage:"
+    echo "  kubectl snapshotmanager create TYPE NAME [--sts=statefulset_name]"
+}
+
+function usage() {
+    echo "kubectl-snapshotmanager is kubectl plugin for VolumeSnapshots"
+    echo "Commands:"
+    echo "  describe  Show volume snapshots related to a specified resource"
+    echo "            requires either statefulset/sts persistentvolumeclaim/pvc or pod/po and name of the resource"
+    echo "  create    Create a snapshot-manager maintained resources, VolumeSnapshot/SnapshotRevert"
+    echo "            shortcut for simple creation of resources defined by volume snapshot CRDs, initialized with default values"
+    echo "  revert    Revert application defined in specified SnapshotRevert to certain set of snapshots"
+    echo "  undo      Undo latest revert in specified SnapshotRevert"
+    echo ""
+    echo "Examples:"
+    echo "  # Describe PVCs and snapshots for mysts StatefulSet"
+    echo "  kubectl snapshotmanager describe sts mysts"
+    echo ""
+    echo "  # Create mysts SnapshotRevert resource for mysts StatefulSet"
+    echo "  kubectl snapshotmanager create snapshotrevert --sts=mysts mysts-revert"
+    echo ""
+    echo "  # Revert mysts StatefulSet to latest set of VolumeSnapshots"
+    echo "  kubectl snapshotmanager revert mysts-revert"
+    echo ""
+    echo "  # Undo latest revert of mysts StatefulSet"
+    echo "  kubectl snapshotmanager undo mysts-revert"
+    echo ""
+    echo "Usage:"
+    echo "  kubectl snapshotmanager <command> [options]"
+}
+
+function __create() {
+    if [ -z "$1" ]; then
+        usage_create
+        exit 1
+    fi
+    for i in $(seq 1 $#); do
+        case "$1" in
+            --sts)
+                sts=$2
+                shift 2 ||:
+                ;;
+            --sts=*)
+                sts=${1/#--sts=/}
+                shift ||:
+                ;;
+            --claim)
+                claim=$2
+                shift 2 ||:
+                ;;
+            --claim=*)
+                claim=${1/#--claim=/}
+                shift ||:
+                ;;
+            --force|-f)
+                force=true
+                shift ||:
+                ;;
+            *)
+                name=$1
+                shift ||:
+                ;;
+        esac
+    done
+    if [ -z "$sts" ]; then
+        usage_create
+        echo ""
+        echo "Missing resource type and name to snapshot, e.g. --sts=mysts"
+        exit 1
+    fi
+    if [ -z "$name" ]; then
+        usage_create
+        echo ""
+        echo "Missing name"
+        exit 1
+    fi
+}
+
+function _create_snapshotrevert() {
+    __create "$@"
+    sts_data=$(kubectl get sts $sts --output=go-template --template='{{.metadata.namespace}}
+{{range $c := .spec.volumeClaimTemplates}}{{$c.metadata.name}} {{end}}')
+    namespace=$(echo "$sts_data" | head -n 1)
+    claim=$(echo "$sts_data" | tail -n 1)
+    kubectl create -f <( __snapshot_revert_template )
+    exit 0
+}
+
+function _create_snapshot() {
+    __create "$@"
+    sts_data=$(kubectl get sts $sts --output=go-template --template='{{.metadata.namespace}}
+    {{range $k,$v := .spec.template.metadata.labels}}{{$k}}={{$v}},{{end}}')
+    namespace=$(echo "$sts_data" | head -n 1)
+    pod_labels=$(echo "$sts_data" | tail -n 1 | sed 's/.$//')
+    claims=( $(kubectl get pods --selector="$pod_labels" --output=go-template --template='{{range $p := .items}}{{range $v := $p.spec.volumes}}{{if $v.persistentVolumeClaim}}{{$v.persistentVolumeClaim.claimName}} {{end}}{{end}}{{end}}') )
+    for pvc in "${claims[@]}"; do
+        if kubectl get volumesnapshot $name-$pvc &>/dev/null; then
+            echo VolumeSnapshot $name-$pvc already exists
+        else
+            kubectl create -f <( __snapshot_template )
+        fi
+    done
+    exit 0
+}
+
+function _revert() {
+    if [ -z "$1" ]; then
+        usage_revert
+        exit 1
+    fi
+    kubectl patch snapshotrevert $1 --patch='{"spec":{"action":{"type":"latest"}}}' --type=merge
+    exit 0
+}
+
+function _undo() {
+    if [ -z "$1" ]; then
+        usage_undo
+        exit 1
+    fi
+    kubectl patch snapshotrevert $1 --patch='{"spec":{"action":{"type":"undo"}}}' --type=merge
+    exit 0
+}
+
+function _describe_pvc() {
+    if [ -z "$1" ]; then
+        usage_describe
+        exit 1
+    fi
+    snapshots=( $(kubectl get volumesnapshot --output=go-template --template='{{range $s := .items}}{{if eq .apiVersion "volumesnapshot.external-storage.k8s.io/v1"}}{{if eq "'$1'" $s.spec.persistentVolumeClaimName}}{{$s.metadata.name}}={{$s.spec.persistentVolumeClaimName}}={{$s.spec.snapshotDataName}}={{$s.metadata.creationTimestamp}} {{end}}{{end}}{{end}}') )
+   
+    ( 
+        echo PVC SNAPSHOT DATA TIMESTAMP
+        for s in "${snapshots[@]}"; do
+            split=( $(echo $s | sed 's/=/ /g') )
+            snap=${split[0]}
+            pvc=${split[1]}
+            snapData=${split[2]}
+            ts=${split[3]}
+        echo $pvc $snap $snapData $ts
+        done
+    ) | column -t
+    exit 0
+}
+
+function _describe_po() {
+    if [ -z "$1" ]; then
+        usage_describe
+        exit 1
+    fi
+    pod=$(kubectl get pod $1 --output=go-template --template='{{range $v := .spec.volumes}}{{if $v.persistentVolumeClaim}}{{$.metadata.name}}={{$v.persistentVolumeClaim.claimName}} {{end}}{{end}}')
+
+    snapshots=( $(kubectl get volumesnapshot --output=go-template --template='{{range $s := .items}}{{if eq .apiVersion "volumesnapshot.external-storage.k8s.io/v1"}}{{$s.metadata.name}}={{$s.spec.persistentVolumeClaimName}}={{$s.spec.snapshotDataName}}={{$s.metadata.creationTimestamp}} {{end}}{{end}}') )
+    declare -A pvcToSnap
+    for s in "${snapshots[@]}"; do
+        split=( $(echo $s | sed 's/=/ /g') )
+        snap=${split[0]}
+        pvc=${split[1]}
+        snapData=${split[2]}
+        ts=${split[3]}
+        pvcToSnap[$pvc]="${pvcToSnap[$pvc]} $snap=$snapData=$ts"
+    done
+    (
+        echo POD PVC SNAPSHOT DATA TIMESTAMP
+        split=( $(echo $pod | sed 's/=/ /g') )
+        pod=${split[0]}
+        pvc=${split[1]}
+        v="${pvcToSnap[$pvc]}"
+        split=( $(echo $v | sed 's/=/ /g') )
+        snap=${split[0]}
+        snapData=${split[1]}
+        ts=${split[2]}
+        echo $pod $pvc $snap $snapData $ts
+    ) | column -t
+    exit 0
+}
+
+function _describe_sts() {
+    if [ -z "$1" ]; then
+        usage_describe
+        exit 1
+    fi
+    sts=$1
+    labels=$(kubectl get sts "$sts" --output=go-template --template='{{range $k,$v := .spec.template.metadata.labels}}{{$k}}={{$v}},{{end}}
+    {{range $c := .spec.volumeClaimTemplates}}{{range $k,$v := $c.metadata.labels}}{{$k}}={{$v}},{{end}}{{end}}')
+
+    pod_labels=$(echo "$labels" | head -n 1 | sed 's/.$//')
+    claim_labels=$(echo "$labels" | tail -n 1 | sed 's/.$//')
+
+    pods=( $(kubectl get pods --selector="$pod_labels" --output=go-template --template='{{range $p := .items}}{{range $v := $p.spec.volumes}}{{if $v.persistentVolumeClaim}}{{$p.metadata.name}}={{$v.persistentVolumeClaim.claimName}} {{end}}{{end}}{{end}}') )
+
+    snapshots=( $(kubectl get volumesnapshot --output=go-template --template='{{range $s := .items}}{{if eq .apiVersion "volumesnapshot.external-storage.k8s.io/v1"}}{{$s.metadata.name}}={{$s.spec.persistentVolumeClaimName}}={{$s.spec.snapshotDataName}}={{$s.metadata.creationTimestamp}} {{end}}{{end}}') )
+    declare -A pvcToSnap
+    for s in "${snapshots[@]}"; do
+        split=( $(echo $s | sed 's/=/ /g') )
+        snap=${split[0]}
+        pvc=${split[1]}
+        snapData=${split[2]}
+        ts=${split[3]}
+        pvcToSnap[$pvc]="${pvcToSnap[$pvc]} $snap=$snapData=$ts"
+    done
+
+    (
+        echo POD PVC SNAPSHOT DATA TIMESTAMP
+        for p in "${pods[@]}"; do
+            split=( $(echo $p | sed 's/=/ /g') )
+            pod=${split[0]}
+            pvc=${split[1]}
+            v="${pvcToSnap[$pvc]}"
+            split=( $(echo $v | sed 's/=/ /g') )
+            snap=${split[0]}
+            snapData=${split[1]}
+            ts=${split[2]}
+            echo $pod $pvc $snap $snapData $ts
+        done
+    ) | column -t
+    exit 0
+}
+
+function _short() {
+    case $1 in
+        statefulset)
+            echo sts
+            ;;
+        pod)
+            echo po
+            ;;
+        persistentvolumeclaim)
+            echo pvc
+            ;;
+        *)
+            echo $1
+            ;;
+    esac
+}
+
+
+### parse arguments
+ptr=""
+args="@(describe|create|revert|undo)"
+args_describe="@(statefulset|sts|persistentvolumeclaim|pvc|pod|po)"
+args_create="@(snapshot|snapshotrevert)"
+
+parsed_cmd="kubectl snapshotmanager"
+while true; do
+    if [ "$(type -t $ptr)" == 'function' ]; then
+        $ptr "$@"
+    fi
+    if [ -z "$args" ]; then
+        usage$ptr
+        exit 1
+    fi
+    case "$1" in
+        "")
+            usage$ptr
+            exit 1
+            ;;
+        $args)
+            cmd=`_short $1`
+            ptr=${ptr}_$cmd
+            cur_arg=args${ptr}
+            args="${!cur_arg}"
+            parsed_cmd="$parsed_cmd $cmd"
+            shift
+            ;;
+        *)
+            usage$ptr
+            echo ""
+            echo "Unknown command '$1' for '$parsed_cmd'"
+            exit 1
+            ;;
+    esac
+done
